@@ -1,6 +1,6 @@
 {
   "name": "@zukhruf/async",
-  "version": "0.3.17",
+  "version": "0.3.18",
   "description": "Helpers for code that waits for promises: cancel a wait when an AbortSignal aborts, and hold callers on a one-shot latch that never rejects.",
   "license": "MIT",
   "repository": {

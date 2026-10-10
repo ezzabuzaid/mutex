@@ -1,6 +1,6 @@
 {
   "name": "@zukhruf/fs",
-  "version": "0.3.17",
+  "version": "0.3.18",
   "description": "File writes that a reader never sees half done: replace a file in one step, with or without a sync to the disk, or create it only when it is absent. A lock on a file that the kernel frees when its holder dies. Also retries the short refusals of Windows, and names a file after any key.",
   "license": "MIT",
   "repository": {
