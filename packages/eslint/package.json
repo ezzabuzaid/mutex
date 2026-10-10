@@ -1,6 +1,6 @@
 {
   "name": "@zukhruf/eslint",
-  "version": "0.3.18",
+  "version": "0.3.19",
   "description": "ESLint rules and configs shared across workspaces. Every check is its own named rule, so a repo's own config cannot silently erase it.",
   "license": "MIT",
   "repository": {

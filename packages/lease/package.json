@@ -1,6 +1,6 @@
 {
   "name": "@zukhruf/lease",
-  "version": "0.3.18",
+  "version": "0.3.19",
   "description": "A lease and its loss: the holder gets an AbortSignal that aborts once, with LeaseLostError, when another holder may have the right. The issuer keeps a LeaseController.",
   "license": "MIT",
   "repository": {

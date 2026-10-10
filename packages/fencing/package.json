@@ -1,6 +1,6 @@
 {
   "name": "@zukhruf/fencing",
-  "version": "0.3.18",
+  "version": "0.3.19",
   "description": "Fencing tokens: a number that grows with each grant, so a protected resource refuses the writes of a stale holder. Token sources that count in memory, in files, or by epoch, and the fenced lease that carries a token.",
   "license": "MIT",
   "repository": {
