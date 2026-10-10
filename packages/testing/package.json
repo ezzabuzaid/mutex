@@ -1,6 +1,6 @@
 {
   "name": "@zukhruf/testing",
-  "version": "0.3.17",
+  "version": "0.3.18",
   "description": "Disposable fixtures for integration tests: Docker containers and database servers, SQLite and DuckDB databases, HTTP servers and streams. A supervisor removes what a killed test run left behind.",
   "license": "MIT",
   "repository": {

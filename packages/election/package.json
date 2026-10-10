@@ -1,6 +1,6 @@
 {
   "name": "@zukhruf/election",
-  "version": "0.3.17",
+  "version": "0.3.18",
   "description": "Elect one leader among the processes that share a directory, with a term that ends when the leader dies and an epoch that grows with each term. Backends are subclasses of one campaign.",
   "license": "MIT",
   "repository": {
