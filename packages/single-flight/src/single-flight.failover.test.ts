@@ -352,6 +352,48 @@ describe('A single flight across processes when the coordinator stops', () => {
 
 describe('A single flight across processes when the coordinator disposes', () => {
   test(
+    'a coordinator that disposes while another process leads a flight leaves a grace window to the next coordinator, so the leader keeps its flight and the joiner gets its value',
+    { timeout: 30_000 },
+    async (t) => {
+      // Arrange
+      await using directory = await scratchDirectory();
+      const options = { graceWindow: 300 };
+      await using coordinator = await coordinatorOf(t, directory.path, options);
+      await using leader = await caller(t, directory.path, 'leader', options);
+      run(leader, 'l', 'sync');
+      await heard(t, leader, 'leading', 'l');
+      await using joiner = await caller(t, directory.path, 'joiner', options);
+      run(joiner, 'j', 'sync');
+      await heard(t, joiner, 'joined', 'j');
+
+      // Act: the coordinator disposes, and the leader lands at the next coordinator.
+      coordinator.child.send({ type: 'dispose' });
+      await waitUntil(
+        t,
+        () => coordinator.has('disposed'),
+        () => coordinator.stderr,
+        newProcessTimeout,
+      );
+      await newTerm(t, directory.path, '2');
+      leader.child.send({ type: 'finish', call: 'l', value: { files: 42 } });
+      const led = await heard(t, leader, 'value', 'l');
+      const joined = await heard(t, joiner, 'value', 'j');
+
+      // Assert
+      assert.deepEqual(led.value, { files: 42 });
+      assert.deepEqual(joined.value, { files: 42 });
+      assert.equal(joined.joined, true);
+      assert.equal(leader.has('lost'), false, 'The leader lost its lease');
+      assert.deepEqual(
+        (await journal(directory.path)).filter((line) =>
+          line.endsWith(':sync'),
+        ),
+        ['leader:work:sync'],
+      );
+    },
+  );
+
+  test(
     'a coordinator that stops right after a landing still delivers it to a joiner that reads slowly',
     { ...onUnix, timeout: 30_000 },
     async (t) => {

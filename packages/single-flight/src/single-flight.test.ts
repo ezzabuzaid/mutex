@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
+import { existsSync } from 'node:fs';
 import fsPromises from 'node:fs/promises';
 import { syncBuiltinESMExports } from 'node:module';
+import { join } from 'node:path';
 import { describe, mock, test } from 'node:test';
 import { Worker } from 'node:worker_threads';
 
+import { SqliteElection } from '@zukhruf/election';
 import { Mutex, SocketStore } from '@zukhruf/mutex';
 
 import {
@@ -713,6 +716,98 @@ describe('A single flight in its directory', () => {
       assert.ok(
         took < graceWindow / 2,
         `The first call took ${Math.round(took)} ms`,
+      );
+    },
+  );
+
+  test(
+    'a coordinator after one that disposed with no flight in progress has no grace window: its first call leads at once',
+    { timeout: 10_000 },
+    async () => {
+      // Arrange: the first coordinator runs once and disposes, as a process that runs alone does.
+      await using directory = await scratchDirectory();
+      const graceWindow = 5000;
+      {
+        await using first = new SingleFlight({
+          directory: directory.path,
+          codec: asText,
+          graceWindow,
+        });
+        await first.run('sync', async () => 'done');
+      }
+      await using second = new SingleFlight({
+        directory: directory.path,
+        codec: asText,
+        graceWindow,
+      });
+      const started = performance.now();
+
+      // Act
+      await second.run('sync', async () => 'done again');
+      const took = performance.now() - started;
+
+      // Assert
+      assert.equal(
+        await fsPromises.readFile(join(directory.path, 'flight.epoch'), 'utf8'),
+        '2',
+        'The second call must start the second term',
+      );
+      assert.ok(
+        took < graceWindow / 2,
+        `The first call of the second term took ${Math.round(took)} ms`,
+      );
+    },
+  );
+
+  test(
+    'a coordinator that disposes inside its own grace window leaves a grace window to the next coordinator',
+    { timeout: 10_000 },
+    async (t) => {
+      // Arrange: the first term resigns without a clean shutdown, as a coordinator of a published version does.
+      await using directory = await scratchDirectory();
+      const graceWindow = 1000;
+      const earlier = await new SqliteElection({
+        directory: directory.path,
+        claimFile: 'flight.lock',
+        epochFile: 'flight.epoch',
+        pollInterval: 10,
+      }).campaign();
+      assert.ok(earlier, 'The first campaign in an empty directory must win');
+      await earlier.resign();
+      {
+        // So it is still in its grace window when it disposes.
+        await using inWindow = new SingleFlight({
+          directory: directory.path,
+          codec: asText,
+          graceWindow: 60_000,
+        });
+        void settle(inWindow.run('sync', async () => 'never'));
+        await waitUntil(
+          t,
+          () => existsSync(join(directory.path, 'flight.sock')),
+          'The second term must start serving',
+        );
+      }
+      await using next = new SingleFlight({
+        directory: directory.path,
+        codec: asText,
+        graceWindow,
+      });
+      const started = performance.now();
+
+      // Act
+      await next.run('sync', async () => 'done');
+      const took = performance.now() - started;
+
+      // Assert
+      assert.equal(
+        await fsPromises.readFile(join(directory.path, 'flight.epoch'), 'utf8'),
+        '3',
+        'The call must start the third term',
+      );
+      assert.ok(
+        took >= graceWindow - 100,
+        `The first call of the third term led after ${Math.round(took)} ms, inside a window of ${graceWindow} ms`,
       );
     },
   );

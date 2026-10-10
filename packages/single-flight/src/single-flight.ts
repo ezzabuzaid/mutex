@@ -86,8 +86,13 @@ export class SingleFlight<T> implements AsyncDisposable {
               await using starting = new AsyncDisposableStack();
               starting.adopt(
                 await FlightServer.start(socketPath, term, {
-                  // The first term of a directory has no flights to wait for.
-                  graceWindow: term.epoch > 1n ? graceWindow : 0,
+                  // The first term of a directory has no flights to wait for,
+                  // and neither has a term after a clean shutdown: the
+                  // coordinator before it left no flight in progress.
+                  graceWindow:
+                    term.epoch > 1n && !term.afterCleanShutdown
+                      ? graceWindow
+                      : 0,
                 }),
                 (started) => started.close(),
               );

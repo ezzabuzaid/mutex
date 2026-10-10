@@ -24,12 +24,19 @@ export interface FlightServerOptions {
 export class FlightServer {
   readonly #server: Server;
   readonly #connections: Set<Socket>;
+  readonly #coordinator: FlightCoordinator;
   readonly #term: Term;
   readonly #closeOnLoss: Disposable;
 
-  private constructor(server: Server, connections: Set<Socket>, term: Term) {
+  private constructor(
+    server: Server,
+    connections: Set<Socket>,
+    coordinator: FlightCoordinator,
+    term: Term,
+  ) {
     this.#server = server;
     this.#connections = connections;
+    this.#coordinator = coordinator;
     this.#term = term;
     this.#closeOnLoss = addAbortListener(term.signal, () => void this.close());
   }
@@ -63,7 +70,7 @@ export class FlightServer {
     server.listen(socketPath);
     await once(server, 'listening');
     server.unref();
-    const started = new FlightServer(server, connections, term);
+    const started = new FlightServer(server, connections, coordinator, term);
     // The term may have been lost while the server started.
     if (term.signal.aborted) {
       await started.close();
@@ -79,14 +86,22 @@ export class FlightServer {
    * Each connection ends only after what was written to it, such as an
    * outcome for a joiner, is sent. The term ends only after the socket is
    * gone: in the other order, this close could remove a successor's socket file.
+   * The term resigns clean when the coordinator leaves nothing to recover, so
+   * the successor skips its grace window; a lost term records nothing.
    * The first call removes the file at once, so a second caller finds it gone,
-   * and it too resolves only once the term ended.
+   * and it too resolves only once the term ended as the first call ended it.
    */
   async close() {
     this.#closeOnLoss[Symbol.dispose]();
     const closed = this.#server[Symbol.asyncDispose]();
+    // Read in the step that ends the connections: each session that ends
+    // withdraws its flights, so later there is never a flight in progress.
+    // An answer written after this step, such as the `lead` of a run whose
+    // token is being minted, never reaches its client, which sends the run
+    // again to the successor. So no client knows of a flight this read missed.
+    const clean = this.#coordinator.leavesNothingToRecover;
     for (const socket of this.#connections) socket.destroySoon();
     await closed;
-    await this.#term.resign();
+    await this.#term.resign({ clean });
   }
 }

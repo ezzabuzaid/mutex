@@ -12,13 +12,14 @@ export interface FlightCoordinatorOptions {
   tokens: TokenSource;
   /**
    * Milliseconds after start during which no flight starts, so leaders from a
-   * previous coordinator can reassert their flights first. Zero for a
-   * coordinator that never replaces another.
+   * previous coordinator can reassert their flights first. Zero when no
+   * earlier coordinator can have left a flight in progress.
    */
   graceWindow: number;
 }
 
 interface Phase {
+  readonly leavesNothingToRecover: boolean;
   run(party: Party, key: string): Promise<void>;
   rejoin(party: Party, key: string, flight: string): Promise<void>;
   reassert(party: Party, key: string, token: FencingToken): void;
@@ -48,6 +49,14 @@ export class FlightCoordinator {
     } else {
       this.#phase = coordinating;
     }
+  }
+
+  /**
+   * Whether the next coordinator would find nothing to recover: no flight is
+   * in progress, and the grace window is over or there was none.
+   */
+  get leavesNothingToRecover(): boolean {
+    return this.#phase.leavesNothingToRecover;
   }
 
   serve(connection: Connection<FlightResponse>): void {
@@ -85,6 +94,10 @@ class Coordinating implements Phase {
   constructor(flights: Map<string, Flight>, tokens: TokenSource) {
     this.#flights = flights;
     this.#tokens = tokens;
+  }
+
+  get leavesNothingToRecover() {
+    return this.#flights.size === 0;
   }
 
   async run(party: Party, key: string) {
@@ -146,6 +159,11 @@ class GraceWindow implements Phase {
     this.#flights = flights;
     this.#over = over;
     this.#next = next;
+  }
+
+  /** A leader of the previous term may not have reasserted its flight yet, so this coordinator cannot know. */
+  get leavesNothingToRecover() {
+    return false;
   }
 
   /** A fresh run leads or joins only once every leader had its chance to reassert. */
