@@ -13,6 +13,7 @@
 - **The claim.** A candidate starts an exclusive SQLite transaction on `<directory>/<claimFile>`. Only one connection can have that transaction. The leader keeps it open for its full term.
 - **A leader that stops.** The operating system kernel keeps the SQLite file lock. When the leader process stops, the kernel removes the lock, also after `SIGKILL`. Then the next campaign wins.
 - **The epoch.** The winner reads `<directory>/<epochFile>`, adds 1, and writes it back. Only the winner can do this, so the epoch always increases. The write is on the disk before the campaign resolves, so a power loss cannot give the same epoch two times.
+- **A clean shutdown.** A term that resigns clean writes its epoch to `<directory>/<claimFile>.clean` before it gives the claim up. The next winner reads that note and removes it. The note tells of a clean shutdown only when its epoch is the epoch just before the new one. The write is atomic but not synced to the disk: a lost note only makes the next term recover when it did not have to.
 - **A campaign does not block.** A candidate tries once, waits `pollInterval`, and tries again until `timeout`. The process continues other work between the tries. (A SQLite busy timeout would stop the event loop of each candidate.)
 
 ```ts
@@ -43,4 +44,4 @@ All results are from tests on macOS with Node 26:
 - **A deleted claim file gives two leaders.** After the claim file was deleted, a second candidate won while the first leader was alive.
 - **A stopped leader is replaced fast.** After `SIGKILL` of the leader, the next candidate became the leader in approximately 10 ms.
 
-The tests in `src/sqlite/sqlite-election.test.ts` check that exactly one of four processes wins, that a new leader has a higher epoch, that a losing campaign does not block its process, and that the epoch is on the disk before the campaign resolves.
+The tests in `src/sqlite/sqlite-election.test.ts` check that exactly one of four processes wins, that a new leader has a higher epoch, that a losing campaign does not block its process, that the epoch is on the disk before the campaign resolves, and that only the term just after a clean resign reads a clean shutdown.

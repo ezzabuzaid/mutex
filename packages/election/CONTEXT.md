@@ -32,6 +32,10 @@ _Avoid_: Generation, version, revision
 The leader ends its term on purpose and gives the claim up.
 _Avoid_: Release (the backend releases the claim when the leader resigns), step down
 
+**Clean shutdown**:
+A resign in which the leader says that it leaves nothing for the next term to recover, for example no work in progress. The backend records it while the term still holds the claim. Only the next term reads it, as `afterCleanShutdown`. A crash, a lost term, and a resign without `clean` are not a clean shutdown.
+_Avoid_: Graceful shutdown, handover
+
 **Lost term**:
 A term that ended while its leader still ran: the backend took the claim away, for example because the leader did not renew it in time. A lost term is a lost lease of `@zukhruf/lease`: the signal of the term aborts with `LeaseLostError`, and its subject is `'leadership'`.
 _Avoid_: Expired, revoked
