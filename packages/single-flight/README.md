@@ -194,7 +194,7 @@ Version 0.3.13 to 0.3.15 had a pull design. These parts changed:
 - [ADR 0006: The election and the connection are a copy of the mutex code](./docs/adr/0006-the-election-and-the-connection-are-a-copy-of-the-mutex-code.md)
 - [ADR 0007: A work error after a lost lease rejects with LeaseLostError](./docs/adr/0007-a-work-error-after-a-lost-lease-rejects-with-leaselosterror.md)
 - [ADR 0008: A connection closes only when its framing breaks](./docs/adr/0008-a-connection-closes-only-when-its-framing-breaks.md)
-- [Code copied from the mutex](./docs/copied-from-mutex.md): each copied file, what changed, and why.
+- [Code copied from the mutex](./docs/copied-from-mutex.md): each copied file, what changed, and why; the rules that the single flight shares with the mutex; and the code that is in two places inside the single flight.
 - Superseded: [ADR 0001](./docs/adr/0001-a-joiner-follows-its-flight-record-without-acquiring-the-key.md) and [ADR 0002](./docs/adr/0002-a-flight-that-all-callers-left-is-abandoned.md).
 
 ## Development
