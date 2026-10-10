@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
+import { existsSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { type Socket, connect, createServer } from 'node:net';
 import { join } from 'node:path';
@@ -317,6 +318,75 @@ describe('The wire of a single flight', () => {
         ending.resolve('done');
         await leader;
       }
+    },
+  );
+
+  test(
+    'a rejoin during the grace window gets the outcome only of its own ended flight: a rejoin that names another flight of the key is told interrupted',
+    { ...onUnixSockets, timeout: 10_000 },
+    async (t) => {
+      // Arrange: the last coordinator, of a published version, recorded term 41, so this one opens a grace window.
+      await using directory = await scratchDirectory();
+      await writeFile(join(directory.path, 'flight.epoch'), '41');
+      await using flights = new SingleFlight({
+        directory: directory.path,
+        codec: asText,
+        graceWindow: 1500,
+      });
+      // This run starts the coordinator, and then waits for the window to end, as every fresh run does.
+      const warmUp = settle(flights.run('warm-up', async () => 'warm'));
+      await waitUntil(
+        t,
+        () => existsSync(join(directory.path, 'flight.sock')),
+        'The coordinator must listen',
+      );
+      using peer = await peerOf(directory.path);
+      peer.send('{"op":"hello","protocol":"single-flight","version":1}');
+      await linesOf(t, peer, 1);
+      // A leader of term 41 reasserts its flight of `sync` and lands it inside the window.
+      const ended = (41n << 32n) | 1n;
+      peer.send(`{"op":"reassert","id":"a","key":"sync","token":"${ended}"}`);
+      peer.send('{"op":"land","id":"a","outcome":{"value":"first"}}');
+      await linesOf(t, peer, 2);
+
+      // Act: a joiner of another flight of `sync` comes back, and then a joiner of the ended flight.
+      peer.send(`{"op":"run","id":"b","key":"sync","flight":"${ended + 1n}"}`);
+      peer.send(`{"op":"run","id":"c","key":"sync","flight":"${ended}"}`);
+      await linesOf(t, peer, 4);
+
+      // Assert: only a rejoin inside the window gets an ended flight's outcome, so `c` shows that `b` came inside it too.
+      assert.deepEqual(peer.received.split('\n').slice(1, 4), [
+        '{"op":"ack","id":"a"}',
+        '{"op":"landed","id":"c","outcome":{"value":"first"}}',
+        '{"op":"interrupted","id":"b"}',
+      ]);
+      await warmUp;
+    },
+  );
+
+  test(
+    'a run that is withdrawn while the coordinator mints its token never leads, and the next run of the key leads',
+    { ...onUnixSockets, timeout: 10_000 },
+    async (t) => {
+      // Arrange
+      await using directory = await scratchDirectory();
+      await using _coordinator = await coordinatorOf(directory.path);
+      using peer = await peerOf(directory.path);
+      peer.send('{"op":"hello","protocol":"single-flight","version":1}');
+      await linesOf(t, peer, 1);
+
+      // Act: the run and its cancel go in one write, so the coordinator reads the cancel before the run's token is minted.
+      peer.send('{"op":"run","id":"a","key":"sync"}\n{"op":"cancel","id":"a"}');
+      peer.send('{"op":"run","id":"b","key":"sync"}');
+      await linesOf(t, peer, 2);
+
+      // Assert
+      const answers = peer.received.split('\n').slice(1, -1);
+      assert.equal(answers.length, 1, `Got ${JSON.stringify(answers)}`);
+      assert.match(
+        answers[0] ?? '',
+        /^\{"op":"lead","id":"b","token":"\d+"\}$/,
+      );
     },
   );
 
