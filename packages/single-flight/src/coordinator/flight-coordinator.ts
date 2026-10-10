@@ -91,7 +91,7 @@ class Coordinating implements Phase {
     // A token that goes unused is harmless: tokens only need to grow.
     const token = await this.#tokens.next(key);
     // The client may have withdrawn the run while the token was minted.
-    if (party.role.kind !== 'waiting') return;
+    if (!party.waiting) return;
     const inProgress = this.#flights.get(key);
     if (inProgress) return inProgress.add(party);
     const flight = new Flight(key, token, party);
@@ -101,7 +101,7 @@ class Coordinating implements Phase {
 
   /** A rejoin joins only its own flight; any other answer could be a second run of the work. */
   async rejoin(party: Party, key: string, flight: string) {
-    if (party.role.kind !== 'waiting') return;
+    if (!party.waiting) return;
     const inProgress = this.#flights.get(key);
     if (inProgress?.is(flight)) return inProgress.add(party);
     party.end({ op: 'interrupted' });
@@ -162,7 +162,7 @@ class GraceWindow implements Phase {
   async rejoin(party: Party, key: string, flight: string) {
     const over = this.#over.wait().then(() => 'over' as const);
     for (;;) {
-      if (party.role.kind !== 'waiting') return;
+      if (!party.waiting) return;
       const inProgress = this.#flights.get(key);
       if (inProgress?.is(flight)) return inProgress.add(party);
       const ending = this.#endings.get(key);

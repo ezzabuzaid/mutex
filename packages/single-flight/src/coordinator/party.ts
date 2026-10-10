@@ -37,6 +37,11 @@ export class Party {
     return this.#role;
   }
 
+  /** Whether the party still waits: it has no answer yet, it was not withdrawn, and its connection is not gone. */
+  get waiting(): boolean {
+    return this.#role.kind === 'waiting';
+  }
+
   lead(flight: Flight) {
     this.#role = { kind: 'leading', flight };
     this.#reply({ op: 'lead', token: flight.token.toString() });
