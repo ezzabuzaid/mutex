@@ -1,6 +1,7 @@
 import type { Socket } from 'node:net';
 
 import { isRecord } from '../shared/is-record.ts';
+import { jsonLine } from './json-line.ts';
 import { leaveErrorsToClose } from './leave-errors-to-close.ts';
 
 /** The protocol a single flight's processes speak, named in every hello, so no process of another protocol is ever served. */
@@ -25,7 +26,7 @@ export type Greeting =
 /** Says which protocol this process speaks, and reads the coordinator's answer. */
 export async function greet(socket: Socket): Promise<Greeting> {
   socket.write(
-    `${JSON.stringify({ op: 'hello', protocol: PROTOCOL, version: PROTOCOL_VERSION })}\n`,
+    jsonLine({ op: 'hello', protocol: PROTOCOL, version: PROTOCOL_VERSION }),
   );
   const answer = parse(await readLine(socket));
   if (isRecord(answer) && answer.op === 'welcome') return { kind: 'welcome' };
@@ -53,12 +54,12 @@ export async function welcome(socket: Socket): Promise<boolean> {
     return false;
   }
   if (hello.protocol === PROTOCOL && hello.version === PROTOCOL_VERSION) {
-    socket.write(`${JSON.stringify({ op: 'welcome' })}\n`);
+    socket.write(jsonLine({ op: 'welcome' }));
     return true;
   }
   // Destroyed once the answer is written: a paused socket would never see a silent process hang up.
   socket.end(
-    `${JSON.stringify({ op: 'refused', protocol: PROTOCOL, version: PROTOCOL_VERSION })}\n`,
+    jsonLine({ op: 'refused', protocol: PROTOCOL, version: PROTOCOL_VERSION }),
     () => socket.destroy(),
   );
   return false;

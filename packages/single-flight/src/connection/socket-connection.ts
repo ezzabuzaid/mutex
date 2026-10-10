@@ -3,13 +3,14 @@ import type { Socket } from 'node:net';
 import { createInterface } from 'node:readline';
 
 import type { Connection, ConnectionEvents } from './connection.ts';
+import { jsonLine } from './json-line.ts';
 import { leaveErrorsToClose } from './leave-errors-to-close.ts';
 
 /**
  * Newline-delimited JSON over a stream socket. A stream has no message
- * boundaries (writes arrive merged and split), and JSON escapes newlines inside
- * strings, so one line is always one message. `isIncoming` checks each message
- * from the peer; a line that is not one closes the connection.
+ * boundaries (writes arrive merged and split), so each message is one line
+ * (see `jsonLine`). `isIncoming` checks each message from the peer; a line
+ * that is not one closes the connection.
  */
 export class SocketConnection<Outgoing, Incoming>
   extends EventEmitter<ConnectionEvents<Incoming>>
@@ -45,7 +46,7 @@ export class SocketConnection<Outgoing, Incoming>
         reject(new Error('The socket is closed.'));
         return;
       }
-      this.#socket.write(`${JSON.stringify(message)}\n`, (error) =>
+      this.#socket.write(jsonLine(message), (error) =>
         error ? reject(error) : resolve(),
       );
     });

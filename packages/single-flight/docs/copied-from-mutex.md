@@ -22,6 +22,7 @@ The election is no longer a copy. `@zukhruf/election` holds it, made into one ca
 | --------------------------------------------- | ------------------------------------- |
 | `shared/is-record.ts`                         | `shared/is-record.ts`                 |
 | `lock-stores/socket/leave-errors-to-close.ts` | `connection/leave-errors-to-close.ts` |
+| `lock-stores/socket/json-line.ts`             | `connection/json-line.ts`             |
 
 ## Copied with changes
 
@@ -42,7 +43,6 @@ The lock aliases `ClientConnection` and `ClientConnector` become `FlightConnecti
 Differs since 2026-10-10 (backlog #2541):
 
 - The copy takes an `isIncoming` check, and it closes the connection for a JSON line that fails the check. The mutex takes no check, and closes only for a line that is not JSON (7f80fa7, the mutex's ADR 0017). The maintainer chose that a JSON line that is not a message is ignored.
-- The copy builds each line with `JSON.stringify` and a newline. The mutex uses `jsonLine` (27f9f3c).
 - The copy wraps each write in a promise, after its own check that the socket is writable. The mutex binds `socket.write` once with `promisify`, and the callback reports a write to a closed socket (46a6cc6).
 
 **`lock-stores/socket/local-directory-connector.ts` → `connection/local-directory-connector.ts`.**
@@ -56,8 +56,6 @@ Only its types and comments change.
 - `FIRST_LINE_LIMIT` stays 1024 bytes.
 
 Why: a hello that names its protocol cannot be read as a hello of another protocol.
-
-Differs since 2026-10-10: the copy builds each line with `JSON.stringify` and a newline. The mutex uses `jsonLine` (27f9f3c). Backlog #2541.
 
 **`lock-stores/socket/protocol-version-error.ts` → `connection/protocol-version-error.ts`.**
 The messages name the single flight's coordinator, not the socket store's leader.
