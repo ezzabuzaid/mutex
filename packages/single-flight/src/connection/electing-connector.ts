@@ -109,13 +109,11 @@ export class ElectingConnector implements FlightConnector {
     term: Term,
     signal: AbortSignal,
   ): Promise<FlightConnection | undefined> {
-    try {
-      await this.#options.serve(term);
-    } catch (error) {
-      // A term that nothing serves would stop every other candidate from coordinating.
-      await term.resign();
-      throw error;
-    }
+    await using serving = new AsyncDisposableStack();
+    // A term that nothing serves would stop every other candidate from coordinating.
+    serving.defer(() => term.resign());
+    await this.#options.serve(term);
+    serving.move();
     const own = await reachUnlessAborted(this.#options.socketPath, signal);
     if (!own) return undefined;
     const greeting = await greetUnlessAborted(own, signal);
@@ -179,10 +177,9 @@ async function greetUnlessAborted(
   socket: Socket,
   signal: AbortSignal,
 ): Promise<Greeting> {
-  try {
-    return await untilAborted(greet(socket), signal);
-  } catch (error) {
-    socket.destroy();
-    throw error;
-  }
+  using greeting = new DisposableStack();
+  greeting.defer(() => socket.destroy());
+  const greeted = await untilAborted(greet(socket), signal);
+  greeting.move();
+  return greeted;
 }
