@@ -43,7 +43,6 @@ The lock aliases `ClientConnection` and `ClientConnector` become `FlightConnecti
 Differs since 2026-10-10 (backlog #2541):
 
 - The copy takes an `isIncoming` check, and it closes the connection for a JSON line that fails the check. The mutex takes no check, and closes only for a line that is not JSON (7f80fa7, the mutex's ADR 0017). The maintainer chose that a JSON line that is not a message is ignored.
-- The copy wraps each write in a promise, after its own check that the socket is writable. The mutex binds `socket.write` once with `promisify`, and the callback reports a write to a closed socket (46a6cc6).
 
 **`lock-stores/socket/local-directory-connector.ts` → `connection/local-directory-connector.ts`.**
 Only its types and comments change.
