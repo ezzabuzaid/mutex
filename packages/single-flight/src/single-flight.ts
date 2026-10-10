@@ -6,10 +6,10 @@ import { FlightClient, type Lead } from './client/flight-client.ts';
 import type { Codec } from './codec.ts';
 import { ConnectionSupervisor } from './connection/connection-supervisor.ts';
 import { ElectingConnector } from './connection/electing-connector.ts';
+import { flightElection } from './connection/flight-election.ts';
 import { LocalDirectoryConnector } from './connection/local-directory-connector.ts';
 import { socketPathFor } from './connection/socket-path.ts';
 import { FlightServer } from './coordinator/flight-server.ts';
-import { LeaderElection } from './election/leader-election.ts';
 import {
   FlightFailedError,
   FlightInterruptedError,
@@ -79,17 +79,15 @@ export class SingleFlight<T> implements AsyncDisposable {
           directory,
           new ElectingConnector({
             socketPath,
-            election: new LeaderElection(directory, {
-              pollInterval: POLL_INTERVAL,
-            }),
+            election: flightElection(directory, POLL_INTERVAL),
             pollInterval: POLL_INTERVAL,
-            serve: async (leadership) => {
+            serve: async (term) => {
               // Until serving has fully started, a failure closes the new server, so no server outlives its term.
               await using starting = new AsyncDisposableStack();
               starting.adopt(
-                await FlightServer.start(socketPath, leadership, {
+                await FlightServer.start(socketPath, term, {
                   // The first term of a directory has no flights to wait for.
-                  graceWindow: leadership.epoch > 1n ? graceWindow : 0,
+                  graceWindow: term.epoch > 1n ? graceWindow : 0,
                 }),
                 (started) => started.close(),
               );

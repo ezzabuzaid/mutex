@@ -1,12 +1,13 @@
+import { addAbortListener } from 'node:events';
 import { unlink } from 'node:fs/promises';
 import { type Server, type Socket, createServer } from 'node:net';
 
+import type { Term } from '@zukhruf/election';
 import { EpochTokenSource } from '@zukhruf/fencing';
 import { isErrno } from '@zukhruf/fs';
 
 import { welcome } from '../connection/handshake.ts';
 import { SocketConnection } from '../connection/socket-connection.ts';
-import type { Leadership } from '../election/leadership.ts';
 import {
   type FlightResponse,
   type RequestEnvelope,
@@ -21,26 +22,26 @@ export interface FlightServerOptions {
 
 /**
  * Serves a `FlightCoordinator` on a Unix socket for one term. Lease tokens
- * carry the term's epoch, so they outrank every token of earlier terms.
+ * carry the term's epoch, so they outrank every token of earlier terms. A
+ * term that is lost may already be another process's, so the server closes
+ * itself when the term's signal aborts.
  */
 export class FlightServer {
   readonly #server: Server;
   readonly #connections: Set<Socket>;
-  readonly #leadership: Leadership;
+  readonly #term: Term;
+  readonly #closeOnLoss: Disposable;
 
-  private constructor(
-    server: Server,
-    connections: Set<Socket>,
-    leadership: Leadership,
-  ) {
+  private constructor(server: Server, connections: Set<Socket>, term: Term) {
     this.#server = server;
     this.#connections = connections;
-    this.#leadership = leadership;
+    this.#term = term;
+    this.#closeOnLoss = addAbortListener(term.signal, () => void this.close());
   }
 
   static async start(
     socketPath: string,
-    leadership: Leadership,
+    term: Term,
     { graceWindow }: FlightServerOptions,
   ): Promise<FlightServer> {
     // Only the coordinator gets here, so removing a dead coordinator's socket file cannot race another server.
@@ -51,7 +52,7 @@ export class FlightServer {
       });
     }
     const coordinator = new FlightCoordinator({
-      tokens: new EpochTokenSource(leadership.epoch),
+      tokens: new EpochTokenSource(term.epoch),
       graceWindow,
     });
     const connections = new Set<Socket>();
@@ -79,7 +80,13 @@ export class FlightServer {
       });
     });
     server.unref();
-    return new FlightServer(server, connections, leadership);
+    const started = new FlightServer(server, connections, term);
+    // The term may have been lost while the server started.
+    if (term.signal.aborted) {
+      await started.close();
+      term.signal.throwIfAborted();
+    }
+    return started;
   }
 
   /**
@@ -89,13 +96,15 @@ export class FlightServer {
    * Each connection ends only after what was written to it, such as an
    * outcome for a joiner, is sent. The term ends only after the socket is
    * gone: in the other order, this close could remove a successor's socket file.
+   * A second caller waits for the first.
    */
   async close() {
+    this.#closeOnLoss[Symbol.dispose]();
     const closed = new Promise<void>((resolve) =>
       this.#server.close(() => resolve()),
     );
     for (const socket of this.#connections) socket.destroySoon();
     await closed;
-    await this.#leadership.resign();
+    await this.#term.resign();
   }
 }

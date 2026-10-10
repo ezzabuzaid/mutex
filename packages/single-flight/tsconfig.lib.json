@@ -18,6 +18,9 @@
       "path": "../fencing/tsconfig.lib.json"
     },
     {
+      "path": "../election/tsconfig.lib.json"
+    },
+    {
       "path": "../async/tsconfig.lib.json"
     },
     {

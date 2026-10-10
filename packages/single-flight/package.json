@@ -42,6 +42,7 @@
   },
   "dependencies": {
     "@zukhruf/async": "^0.3.13",
+    "@zukhruf/election": "^0.3.17",
     "@zukhruf/fencing": "^0.3.16",
     "@zukhruf/fs": "^0.3.16",
     "@zukhruf/lease": "^0.3.16"

@@ -2,9 +2,8 @@ import { type Socket, connect } from 'node:net';
 import { setTimeout as delay } from 'node:timers/promises';
 
 import { untilAborted } from '@zukhruf/async';
+import type { LeaderElection, Term } from '@zukhruf/election';
 
-import type { LeaderElection } from '../election/leader-election.ts';
-import type { Leadership } from '../election/leadership.ts';
 import {
   type FlightRequest,
   type FlightResponse,
@@ -23,11 +22,11 @@ const HANDSHAKE_PATIENCE = 1000;
 
 export interface ElectingConnectorOptions {
   socketPath: string;
-  /** The connector only campaigns, so it needs only that part of an election. */
-  election: Pick<LeaderElection, 'campaign'>;
+  /** Only `campaign`: the connector never runs a backend's own steps, so an election of any backend fits. */
+  election: Pick<LeaderElection<unknown>, 'campaign'>;
   pollInterval: number;
   /** Starts serving for a term this process just won. */
-  serve(leadership: Leadership): Promise<void>;
+  serve(term: Term): Promise<void>;
 }
 
 /**
@@ -53,9 +52,9 @@ export class ElectingConnector implements FlightConnector {
           (await this.#outlastHangUp(signal));
         if (connection) return connection;
       }
-      const leadership = await this.#campaign(pollInterval, signal);
-      if (leadership) {
-        const own = await this.#coordinate(leadership, signal);
+      const term = await this.#campaign(pollInterval, signal);
+      if (term) {
+        const own = await this.#coordinate(term, signal);
         if (own) return own;
       } else {
         await delay(pollInterval, undefined, { signal });
@@ -77,8 +76,8 @@ export class ElectingConnector implements FlightConnector {
     const { socketPath, pollInterval } = this.#options;
     const deadline = performance.now() + HANDSHAKE_PATIENCE;
     for (;;) {
-      const leadership = await this.#campaign(0, signal);
-      if (leadership) return this.#coordinate(leadership, signal);
+      const term = await this.#campaign(0, signal);
+      if (term) return this.#coordinate(term, signal);
       const again = await reachUnlessAborted(socketPath, signal);
       if (!again) return undefined;
       const connection = await this.#follow(again, signal);
@@ -90,27 +89,31 @@ export class ElectingConnector implements FlightConnector {
     }
   }
 
-  /** Campaigns until `timeout`; a term won after `signal` aborted is resigned. */
+  /**
+   * Campaigns until `timeout`; a term won after `signal` aborted is resigned.
+   * The election gives up a term that it wins after the abort, but the abort
+   * can also land after the campaign resolved, before this step continues.
+   */
   async #campaign(
     timeout: number,
     signal: AbortSignal,
-  ): Promise<Leadership | undefined> {
-    const leadership = await this.#options.election.campaign({ timeout });
-    if (signal.aborted) await leadership?.resign();
+  ): Promise<Term | undefined> {
+    const term = await this.#options.election.campaign({ timeout, signal });
+    if (signal.aborted) await term?.resign();
     signal.throwIfAborted();
-    return leadership;
+    return term;
   }
 
   /** Serves the term this process just won, and reaches its own server like any other process. */
   async #coordinate(
-    leadership: Leadership,
+    term: Term,
     signal: AbortSignal,
   ): Promise<FlightConnection | undefined> {
     try {
-      await this.#options.serve(leadership);
+      await this.#options.serve(term);
     } catch (error) {
       // A term that nothing serves would stop every other candidate from coordinating.
-      await leadership.resign();
+      await term.resign();
       throw error;
     }
     const own = await reachUnlessAborted(this.#options.socketPath, signal);
