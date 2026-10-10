@@ -69,7 +69,6 @@ The messages name the single flight's coordinator, not the socket store's leader
 
 Differs since 2026-10-10 (backlog #2541):
 
-- The copy waits between tries with `delay` alone. When the signal aborts there, the connect rejects with an `AbortError`, not with the reason of the signal, so the copy breaks the contract of `Connector`. The mutex wraps the wait in `untilAborted` (9609c2d).
 - The copy gives up a term that it cannot serve, and destroys a socket that it cannot greet, in `catch` blocks. The mutex does both with disposable stacks (86b91bd).
 - The copy reaches a socket with a promise that it builds itself. The mutex waits for `once(socket, 'connect')` (5ac2a20).
 - The mutex's socket connection takes no check (7f80fa7). The copy gives `isFlightResponse` to its socket connection.
