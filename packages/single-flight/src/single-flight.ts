@@ -23,7 +23,8 @@ const POLL_INTERVAL = 10;
 export interface SingleFlightOptions<T> {
   /**
    * The local folder where the processes that share flights meet. They keep
-   * `flight.lock`, `flight.epoch` and `flight.sock` there, so every process
+   * `flight.lock`, `flight.epoch`, `flight.lock.clean` and `flight.sock`
+   * there, so every process
    * that names the same folder is in one group, and callers of one key share
    * a flight across that group. There is no default: one shared default would
    * put every application on the host into one group, and unrelated
@@ -36,7 +37,8 @@ export interface SingleFlightOptions<T> {
   /**
    * Milliseconds that a new coordinator starts no flight after the previous
    * one stopped, so the leaders of flights in progress can claim them again.
-   * Must exceed how long a process takes to reconnect. Defaults to 500.
+   * A coordinator after a clean shutdown of the one before has none. Must
+   * exceed how long a process takes to reconnect. Defaults to 500.
    */
   graceWindow?: number;
 }

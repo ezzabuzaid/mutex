@@ -70,7 +70,7 @@ The lease that the work gets comes from `@zukhruf/lease`, and its token comes fr
 
 ## The directory
 
-The directory is the local folder where the processes that share flights meet. Each process that uses a `SingleFlight` keeps three files there: `flight.lock`, `flight.epoch` and `flight.sock`. The election of [`@zukhruf/election`](../election/README.md) claims `flight.lock` with a file lock, and records the epoch of the last term in `flight.epoch`. The journal of the claim is in memory, so a coordinator that stops leaves no `flight.lock-journal` file. All the processes that name the same directory are one group, and the callers of one key share a flight in that group only.
+The directory is the local folder where the processes that share flights meet. Each process that uses a `SingleFlight` keeps four files there: `flight.lock`, `flight.epoch`, `flight.lock.clean` and `flight.sock`. The election of [`@zukhruf/election`](../election/README.md) claims `flight.lock` with a file lock, and records the epoch of the last term in `flight.epoch`. After a clean shutdown of a coordinator, `flight.lock.clean` holds the epoch of its term until the next term starts. The journal of the claim is in memory, so a coordinator that stops leaves no `flight.lock-journal` file. All the processes that name the same directory are one group, and the callers of one key share a flight in that group only.
 
 There is no default directory. One default would put each application on the host into one group, and unrelated applications that use the same key would join each other's flights. Give each group its own directory, for example a folder of your application's data.
 
@@ -89,11 +89,11 @@ The work gets the lease of the flight:
 - `token`: a `FencingToken`. Its high 32 bits are the epoch of the coordinator's term, so a newer term always gives higher tokens.
 - `signal`: it aborts with `LeaseLostError` when the flight is no longer the leader's. The `subject` of the error is the key. This occurs when the leader misses the grace window of a new coordinator.
 
-| Option        | What it does                                                                                                                                                                                   |
-| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `directory`   | The local folder where the processes of one group meet. See [The directory](#the-directory).                                                                                                   |
-| `codec`       | Turns the value of a flight into text for the joiners, and back. See [The codec](#the-codec).                                                                                                  |
-| `graceWindow` | Milliseconds that a new coordinator starts no flight, so the leaders of the flights in progress can reassert them. It must be longer than a process takes to connect again. Defaults to `500`. |
+| Option        | What it does                                                                                                                                                                                                                                  |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `directory`   | The local folder where the processes of one group meet. See [The directory](#the-directory).                                                                                                                                                  |
+| `codec`       | Turns the value of a flight into text for the joiners, and back. See [The codec](#the-codec).                                                                                                                                                 |
+| `graceWindow` | Milliseconds that a new coordinator starts no flight, so the leaders of the flights in progress can reassert them. It must be longer than a process takes to connect again. A coordinator after a clean shutdown has none. Defaults to `500`. |
 
 `flights[Symbol.asyncDispose]()` waits until each landing of this process reached a coordinator, and then it disconnects. When this process is the coordinator, the other processes elect a new one.
 
@@ -164,7 +164,8 @@ Give a signal to stop the wait of one caller: `flights.run(key, work, { signal: 
 ## When a process stops
 
 - **The process of a leader stops.** The coordinator tells each joiner that the flight is interrupted, and each joiner rejects with `FlightInterruptedError` at once. No joiner runs the work again. The next call of the key leads a new flight.
-- **The coordinator stops.** The other processes elect a new coordinator. Its term starts with a grace window. In the grace window:
+- **The coordinator disposes with nothing in progress.** This is a clean shutdown: no flight is in progress, and the grace window of the coordinator is over, or it had none. The next coordinator then has no grace window, and each call leads or joins at once. [ADR 0009](./docs/adr/0009-the-next-coordinator-skips-the-grace-window-after-a-clean-shutdown.md) tells why.
+- **The coordinator stops in another way.** For example, its process stops, or it disposes while a flight is in progress. The other processes elect a new coordinator. Its term starts with a grace window. In the grace window:
   - Each leader reasserts its flight, and sends its landing again when it has one.
   - Each joiner rejoins its flight by the flight's token, and it gets the outcome of that flight.
   - A new call waits for the grace window to end. Then it leads or joins.
@@ -194,6 +195,7 @@ Version 0.3.13 to 0.3.15 had a pull design. These parts changed:
 - [ADR 0006: The election and the connection are a copy of the mutex code](./docs/adr/0006-the-election-and-the-connection-are-a-copy-of-the-mutex-code.md)
 - [ADR 0007: A work error after a lost lease rejects with LeaseLostError](./docs/adr/0007-a-work-error-after-a-lost-lease-rejects-with-leaselosterror.md)
 - [ADR 0008: A connection closes only when its framing breaks](./docs/adr/0008-a-connection-closes-only-when-its-framing-breaks.md)
+- [ADR 0009: The next coordinator skips the grace window after a clean shutdown](./docs/adr/0009-the-next-coordinator-skips-the-grace-window-after-a-clean-shutdown.md)
 - [Code copied from the mutex](./docs/copied-from-mutex.md): each copied file, what changed, and why; the rules that the single flight shares with the mutex; and the code that is in two places inside the single flight.
 - Superseded: [ADR 0001](./docs/adr/0001-a-joiner-follows-its-flight-record-without-acquiring-the-key.md) and [ADR 0002](./docs/adr/0002-a-flight-that-all-callers-left-is-abandoned.md).
 

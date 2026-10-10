@@ -71,6 +71,7 @@ Note: on macOS 27 with Node.js 26, a probe listened and connected on socket path
 
 - It serves a `FlightCoordinator`, not a `LockCoordinator`. `EpochTokenSource` comes from `@zukhruf/fencing`.
 - `close` ends each connection with `destroySoon`, not `destroy`.
+- `close` resigns the term clean when the coordinator leaves nothing to recover, so the next coordinator skips its grace window ([ADR 0009](./adr/0009-the-next-coordinator-skips-the-grace-window-after-a-clean-shutdown.md)). The lock server always resigns without `clean`.
 
 Why: a coordinator process can also lead a flight. When it lands the flight and stops at once, `destroy` can drop a `landed` answer that is still on its way to a joiner. `destroySoon` sends what was written first, and then closes.
 
@@ -127,8 +128,8 @@ The rules below are not file copies. Each package writes them in its own code, s
 **The wiring of an electing client.**
 
 - Places: the constructor and `[Symbol.asyncDispose]` of `SingleFlight` (`single-flight.ts`), and of `SocketStore` (`lock-stores/socket/socket-store.ts`).
-- Same: the client talks through a `ConnectionSupervisor`, a `LocalDirectoryConnector` and an `ElectingConnector`. `serve` starts the server through an `AsyncDisposableStack`, so a failure before the server fully started closes it. The server gets a grace window only when the epoch of its term is higher than 1. The servers of this process are in one stack. The disposal closes the client first, and then the servers.
-- Differs: `SocketStore` emits its role events: `leader` in `serve`, and `follower` from `connected`. Its poll interval is an option. The single flight has no role event, and its poll interval is a constant of 10 milliseconds.
+- Same: the client talks through a `ConnectionSupervisor`, a `LocalDirectoryConnector` and an `ElectingConnector`. `serve` starts the server through an `AsyncDisposableStack`, so a failure before the server fully started closes it. The servers of this process are in one stack. The disposal closes the client first, and then the servers.
+- Differs: the flight server gets a grace window only when the epoch of its term is higher than 1 and the term before it did not shut down clean ([ADR 0009](./adr/0009-the-next-coordinator-skips-the-grace-window-after-a-clean-shutdown.md)). The lock server gets one in each term after the first, until the mutex takes the same step (#2549). `SocketStore` emits its role events: `leader` in `serve`, and `follower` from `connected`. Its poll interval is an option. The single flight has no role event, and its poll interval is a constant of 10 milliseconds.
 
 **The grace window and the reassertion with a newer token.**
 

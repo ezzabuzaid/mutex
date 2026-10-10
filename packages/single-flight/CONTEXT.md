@@ -1,6 +1,6 @@
 # Single flight
 
-Callers of one key share the flight in progress. A caller that comes while a flight runs does not start a second flight. It joins the flight and gets its outcome. All the processes that use one directory share their flights. One of these processes is the coordinator, and each call goes through it. Lease has the meaning that [the lease glossary](../lease/CONTEXT.md) gives it. Fencing token has the meaning that [the fencing glossary](../fencing/CONTEXT.md) gives it.
+Callers of one key share the flight in progress. A caller that comes while a flight runs does not start a second flight. It joins the flight and gets its outcome. All the processes that use one directory share their flights. One of these processes is the coordinator, and each call goes through it. Lease has the meaning that [the lease glossary](../lease/CONTEXT.md) gives it. Fencing token has the meaning that [the fencing glossary](../fencing/CONTEXT.md) gives it. Clean shutdown has the meaning that [the election glossary](../election/CONTEXT.md) gives it.
 
 ## Language
 
@@ -61,7 +61,7 @@ The number of a term. Each term has a higher epoch than all the terms before it.
 _Avoid_: Generation, version
 
 **Grace window**:
-The first milliseconds of a term that follows another term. The coordinator starts no flight in it, so the leaders can reassert the flights in progress first. The first term of a directory has no grace window.
+The first milliseconds of a term that follows another term. The coordinator starts no flight in it, so the leaders can reassert the flights in progress first. The first term of a directory has no grace window. A term after a clean shutdown has none too: the coordinator before it shuts down clean only when no flight is in progress and its own grace window is over.
 _Avoid_: Timeout, delay
 
 **Reassert**:
