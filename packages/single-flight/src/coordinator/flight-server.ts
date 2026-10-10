@@ -1,10 +1,9 @@
-import { addAbortListener } from 'node:events';
-import { unlink } from 'node:fs/promises';
+import { addAbortListener, once } from 'node:events';
+import { rm } from 'node:fs/promises';
 import { type Server, type Socket, createServer } from 'node:net';
 
 import type { Term } from '@zukhruf/election';
 import { EpochTokenSource } from '@zukhruf/fencing';
-import { isErrno } from '@zukhruf/fs';
 
 import { welcome } from '../connection/handshake.ts';
 import { SocketConnection } from '../connection/socket-connection.ts';
@@ -47,9 +46,7 @@ export class FlightServer {
     // Only the coordinator gets here, so removing a dead coordinator's socket file cannot race another server.
     // Windows removes a named pipe when its process stops, so there is no file to remove.
     if (process.platform !== 'win32') {
-      await unlink(socketPath).catch((error: unknown) => {
-        if (!isErrno(error, 'ENOENT')) throw error;
-      });
+      await rm(socketPath, { force: true });
     }
     const coordinator = new FlightCoordinator({
       tokens: new EpochTokenSource(term.epoch),
@@ -72,13 +69,8 @@ export class FlightServer {
         );
       });
     });
-    await new Promise<void>((resolve, reject) => {
-      server.once('error', reject);
-      server.listen(socketPath, () => {
-        server.off('error', reject);
-        resolve();
-      });
-    });
+    server.listen(socketPath);
+    await once(server, 'listening');
     server.unref();
     const started = new FlightServer(server, connections, term);
     // The term may have been lost while the server started.
@@ -96,13 +88,12 @@ export class FlightServer {
    * Each connection ends only after what was written to it, such as an
    * outcome for a joiner, is sent. The term ends only after the socket is
    * gone: in the other order, this close could remove a successor's socket file.
-   * A second caller waits for the first.
+   * The first call removes the file at once, so a second caller finds it gone,
+   * and it too resolves only once the term ended.
    */
   async close() {
     this.#closeOnLoss[Symbol.dispose]();
-    const closed = new Promise<void>((resolve) =>
-      this.#server.close(() => resolve()),
-    );
+    const closed = this.#server[Symbol.asyncDispose]();
     for (const socket of this.#connections) socket.destroySoon();
     await closed;
     await this.#term.resign();

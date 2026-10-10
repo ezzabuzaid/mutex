@@ -69,7 +69,6 @@ The messages name the single flight's coordinator, not the socket store's leader
 
 Differs since 2026-10-10 (backlog #2541):
 
-- The copy reaches a socket with a promise that it builds itself. The mutex waits for `once(socket, 'connect')` (5ac2a20).
 - The mutex's socket connection takes no check (7f80fa7). The copy gives `isFlightResponse` to its socket connection.
 
 **`lock-stores/socket/socket-store.ts` (`socketPathFor`, `SOCKET_PATH_LIMIT`) → `connection/socket-path.ts`.**
@@ -85,7 +84,6 @@ Why: a coordinator process can also lead a flight. When it lands the flight and 
 
 Differs since 2026-10-10 (backlog #2541):
 
-- The copy deletes an old socket file with `unlink` and an `ENOENT` check, waits for `listen` with a promise that it builds itself, and closes with `server.close` in a promise. The mutex uses `rm` with `force`, `once(server, 'listening')`, and `server[Symbol.asyncDispose]()` (5ac2a20).
 - The copy gives `isRequestEnvelope` to each socket connection. The mutex gives no check: `LockCoordinator` checks each message (7f80fa7).
 
 **`lock-stores/remote/protocol.ts` (`RequestEnvelope`, `isRequestEnvelope`) → `protocol/flight-protocol.ts`.**

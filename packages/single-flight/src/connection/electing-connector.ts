@@ -1,3 +1,4 @@
+import { once } from 'node:events';
 import { type Socket, connect } from 'node:net';
 import { setTimeout as delay } from 'node:timers/promises';
 
@@ -157,19 +158,15 @@ async function reachUnlessAborted(
 }
 
 /** Resolves `undefined` when nothing listens yet (no file, or a dead coordinator's file). */
-function reach(socketPath: string): Promise<Socket | undefined> {
-  return new Promise((resolve) => {
-    const socket = connect(socketPath);
-    const fail = () => {
-      socket.destroy();
-      resolve(undefined);
-    };
-    socket.once('error', fail);
-    socket.once('connect', () => {
-      socket.off('error', fail);
-      resolve(socket);
-    });
-  });
+async function reach(socketPath: string): Promise<Socket | undefined> {
+  const socket = connect(socketPath);
+  try {
+    await once(socket, 'connect');
+    return socket;
+  } catch {
+    socket.destroy();
+    return undefined;
+  }
 }
 
 /** Greets the coordinator on `socket`; a client that closes meanwhile gives the socket up. */
