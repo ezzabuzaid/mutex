@@ -125,7 +125,7 @@ See [Fencing tokens](./docs/concepts/fencing-tokens.md) and the recipe [Protect 
 - [Leader election](../election/docs/concepts/leader-election.md): how `SocketStore` selects its coordinator, with `SqliteElection` of `@zukhruf/election`.
 - [Failure modes](./docs/concepts/failure-modes.md): what each lock store does when something stops.
 
-**Lock stores**: one page for each lock store, with What, Why, When, When not, How it works, Acquire modes, Failure modes, Options, and Evidence. See the table above.
+**Lock stores**: one page for each lock store, with What, Why, When, When not, How it works, Acquire modes, Holder check, Failure modes, Options, and Evidence. The `SocketStore` page also has Two package versions in one directory. See the table above.
 
 **Recipes**: one use case each, with a full program that you can run.
 
