@@ -53,7 +53,7 @@ The process of a directory that won the election. It answers each call: lead or 
 _Avoid_: Leader (a leader runs a flight), server, master
 
 **Term**:
-The time that one coordinator holds its election. A term ends when the process of the coordinator stops or disposes its single flight.
+The time that one coordinator holds its election. A term ends when the process of the coordinator stops or disposes its single flight. A term can also be lost while the coordinator still runs, when the election takes it away. Then the coordinator stops serving at once, and the other processes elect a new coordinator. The election of a single flight never takes a term from a coordinator that runs.
 _Avoid_: Session, lease
 
 **Epoch**:

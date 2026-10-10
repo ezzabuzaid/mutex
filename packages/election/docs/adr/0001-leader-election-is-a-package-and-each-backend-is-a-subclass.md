@@ -10,7 +10,7 @@ The socket lock store of `@zukhruf/mutex` and `@zukhruf/single-flight` each had 
 
 ## Consequences
 
-- The mutex uses this package since 2026-10-10. Its entry point `@zukhruf/mutex/leader-election` is removed, and `Term` replaced its `Leadership`. The single flight does not use this package yet: the maintainer put that step on hold (backlog #2530). Until then, the election is in two places, and a fix goes into each copy ([copied code](../copied-code.md)).
+- The mutex and the single flight use this package since 2026-10-10. The entry point `@zukhruf/mutex/leader-election` is removed, and `Term` replaced the `Leadership` of each copy. The copies are deleted, so the election is in one place ([copied code](../copied-code.md)).
 - A backend keeps four rules ([README](../../README.md#write-a-backend)). The base cannot enforce the timing rule for a claim that the backend keeps only for a time: `lose` must come before the backend can give the claim to another candidate.
-- A leader that acts for its group stops when `term.signal` aborts. The server of the socket lock store does this, although `SqliteElection` never loses a living term. The server of a single flight must do this too when it uses this package.
+- A leader that acts for its group stops when `term.signal` aborts. The servers of the socket lock store and of the single flight do this, although `SqliteElection` never loses a living term.
 - Those two servers meet their candidates over a socket in the directory, so they work on one host only, whatever the backend.

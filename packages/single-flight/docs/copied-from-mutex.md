@@ -12,16 +12,15 @@ On 2026-10-10, the mutex changed several of these originals. The maintainer chos
 
 The file helpers and the check that refuses a network directory are no longer copies. Both packages use `@zukhruf/fs` (its ADR 0001): `durableWrite`, `isErrno`, `patiently`, `assertLocalDirectory`, and one `NetworkDirectoryError` class that this package gives from its entry point.
 
-## The election is in two places
+## Moved to `@zukhruf/election`
 
-`@zukhruf/election` holds the election, made into one campaign with a subclass for each backend ([its ledger](../../election/docs/copied-code.md)). The mutex uses it since 2026-10-10, and its copy `leader-election/` is deleted. This package does not use it yet: the maintainer put that step on hold (backlog #2530). Until then, a fix to the election goes into each of the two places: `election/leader-election.ts` and `election/leadership.ts` here, and the election files of `@zukhruf/election`. The commit names each file.
+The election is no longer a copy. `@zukhruf/election` holds it, made into one campaign with a subclass for each backend ([its ledger](../../election/docs/copied-code.md)). The mutex uses it since 2026-10-10, and this package too, since the same day (backlog #2530). The copy `election/` of this package and its SQLite helper `shared/sqlite/is-busy.ts` are deleted. The claim on `flight.lock` is now a `FileLock` of `@zukhruf/fs`. Its journal is in memory, so a coordinator that stops leaves no `flight.lock-journal` file. A published version claims `flight.lock` with an exclusive SQLite transaction, and that transaction and the file lock exclude each other (`flight-protocol.test.ts` pins both directions).
 
 ## Copied without a change
 
-| Mutex                                                                                           | Single flight              |
-| ----------------------------------------------------------------------------------------------- | -------------------------- |
-| `shared/sqlite/is-busy.ts` (deleted from the mutex; now private to `FileLock` of `@zukhruf/fs`) | `shared/sqlite/is-busy.ts` |
-| `shared/is-record.ts`                                                                           | `shared/is-record.ts`      |
+| Mutex                 | Single flight         |
+| --------------------- | --------------------- |
+| `shared/is-record.ts` | `shared/is-record.ts` |
 
 ## Copied with changes
 
@@ -31,13 +30,9 @@ The copy has a second type parameter, `Incoming`: its connection gives each mess
 **`lock-stores/remote/connection-supervisor.ts` → `connection/connection-supervisor.ts`.**
 Only the type parameter `Incoming` differs, as in `connection.ts`. Backlog #2541.
 
-**`leader-election/leader-election.ts` (deleted from the mutex; now `@zukhruf/election`) → `election/leader-election.ts`.**
-The claim file is `flight.lock`, not `leader.lock`. The epoch file is `flight.epoch`, not `leader.epoch`. The comments call the elected process the coordinator.
+**`lock-stores/socket/socket-election.ts` → `connection/flight-election.ts`.**
+The claim file is `flight.lock`, not `leader.lock`. The epoch file is `flight.epoch`, not `leader.epoch`. The function is `flightElection`, not `socketElection`.
 Why: a single flight and a socket lock store can use one directory. With the same file names, they would share one election. The winner would serve only one of them, and the other one would never find a server.
-
-**`leader-election/leadership.ts` (deleted from the mutex; now `Term` of `@zukhruf/election`) → `election/leadership.ts`.**
-Only the comments change: a term belongs to the coordinator.
-Why: in this package, a leader is the caller that runs a flight's work.
 
 **`lock-stores/remote/connector.ts` → `connection/connector.ts`.**
 The lock aliases `ClientConnection` and `ClientConnector` become `FlightConnection` and `FlightConnector`. The comment on `connect` does not name keys. The copy also keeps the type parameter `Incoming`, which the mutex removed in 7f80fa7 (backlog #2541).
@@ -74,7 +69,6 @@ The messages name the single flight's coordinator, not the socket store's leader
 
 Differs since 2026-10-10 (backlog #2541):
 
-- The copy uses its own `Leadership`, and it campaigns without the signal. The mutex uses `Term` of `@zukhruf/election`, and gives the signal to `campaign` (e40c1d5, backlog #2530).
 - The copy waits between tries with `delay` alone. When the signal aborts there, the connect rejects with an `AbortError`, not with the reason of the signal, so the copy breaks the contract of `Connector`. The mutex wraps the wait in `untilAborted` (9609c2d).
 - The copy gives up a term that it cannot serve, and destroys a socket that it cannot greet, in `catch` blocks. The mutex does both with disposable stacks (86b91bd).
 - The copy reaches a socket with a promise that it builds itself. The mutex waits for `once(socket, 'connect')` (5ac2a20).
@@ -93,7 +87,6 @@ Why: a coordinator process can also lead a flight. When it lands the flight and 
 
 Differs since 2026-10-10 (backlog #2541):
 
-- The mutex's server closes itself when the signal of its term aborts, and it checks the signal again after it starts (e40c1d5). The copy has no such step: its `Leadership` has no signal (backlog #2530).
 - The copy deletes an old socket file with `unlink` and an `ENOENT` check, waits for `listen` with a promise that it builds itself, and closes with `server.close` in a promise. The mutex uses `rm` with `force`, `once(server, 'listening')`, and `server[Symbol.asyncDispose]()` (5ac2a20).
 - The copy gives `isRequestEnvelope` to each socket connection. The mutex gives no check: `LockCoordinator` checks each message (7f80fa7).
 
@@ -124,9 +117,9 @@ These helpers do not belong in `@zukhruf/coordinator`. A third package that copi
 
 ## What the extraction can share
 
-- **As is, after backlog #2541:** the connection, the connection supervisor, and the socket connection. The SQLite helper `isBusy` is not shared there: `FileLock` of `@zukhruf/fs` keeps it private, and the copy here goes with the election switch (backlog #2530).
+- **As is, after backlog #2541:** the connection, the connection supervisor, and the socket connection.
 - **With parameters:**
-  - the election: done in `@zukhruf/election`, where the names of its two files are options. The mutex uses it. This package does not use it yet (backlog #2530);
+  - the election: done in `@zukhruf/election`, where the names of its two files are options. The mutex and this package use it;
   - the socket path: the file name and the pipe prefix;
   - the handshake: the protocol name, the version, and what the welcome lists;
   - the electing connector: the `connected` callback, and what wraps the connection. After backlog #2541, it checks no message: the class that reads the protocol checks it;

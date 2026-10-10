@@ -10,16 +10,11 @@ This package keeps a few small files that other packages also have. Each one is 
 
 The test helpers are in three packages now: the mutex, the single flight and this one. The maintainer chose a third copy for them, and backlog #2509 records it. The claim of `SqliteElection` is a `FileLock` of `@zukhruf/fs`, so this package keeps no copy of the SQLite result-code checks.
 
-## The election is in two places
+## The election is in one place
 
-This package is the election of the mutex, made into one campaign with a subclass for each backend. The mutex uses it since 2026-10-10, and its copy is deleted. The single flight does not use it yet: the maintainer put that step on hold (backlog #2530). Until it uses it, the single flight keeps its own copy. A fix to the election goes into each of the two places, and the commit names each file.
+This package is the election of the mutex and the single flight, made into one campaign with a subclass for each backend. Both packages use it since 2026-10-10, and their copies are deleted. Thus the election has no copy now.
 
-| Place         | Files                                                                                      |
-| ------------- | ------------------------------------------------------------------------------------------ |
-| This package  | `src/leader-election.ts`, `src/term.ts`, `src/sqlite/sqlite-election.ts`                   |
-| Single flight | `packages/single-flight/src/election/leader-election.ts`, `leadership.ts` (its own ledger) |
-
-What changed from the copy that the mutex had, and that the single flight still has:
+What changed from the copies that the mutex and the single flight had:
 
 - The campaign is the abstract class `LeaderElection`. The SQLite claim is its subclass `SqliteElection`.
 - The claim file and the epoch file are options (`claimFile`, `epochFile`). The mutex uses `leader.lock` and `leader.epoch`. The single flight uses `flight.lock` and `flight.epoch`.

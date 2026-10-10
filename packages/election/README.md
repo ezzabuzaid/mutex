@@ -150,7 +150,7 @@ rival: undefined
 rival after the resign: 2n
 ```
 
-The socket lock store of `@zukhruf/mutex` uses `SqliteElection`, with the claim file `leader.lock` and the epoch file `leader.epoch`. Its leader serves the other candidates over a socket in the directory, so it works on one host only, also with another backend. Its server stops when `term.signal` aborts. `@zukhruf/single-flight` does not use this package yet, and keeps its own copy of the election ([copied code](./docs/copied-code.md)).
+The socket lock store of `@zukhruf/mutex` uses `SqliteElection`, with the claim file `leader.lock` and the epoch file `leader.epoch`. Its leader serves the other candidates over a socket in the directory, so it works on one host only, also with another backend. Its server stops when `term.signal` aborts. `@zukhruf/single-flight` uses `SqliteElection` the same way, with the claim file `flight.lock` and the epoch file `flight.epoch`, so the two packages never join one election in a shared directory.
 
 ## Errors
 

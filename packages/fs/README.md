@@ -1,6 +1,6 @@
 # @zukhruf/fs
 
-Helpers that write files, and a lock on a file that the kernel frees when its holder dies. A reader never sees a part of a write. `@zukhruf/mutex` and `@zukhruf/single-flight` use them for their lock files, `@zukhruf/fencing` for its fencing counters, and `@zukhruf/election` and `@zukhruf/single-flight` for their election epochs.
+Helpers that write files, and a lock on a file that the kernel frees when its holder dies. A reader never sees a part of a write. `@zukhruf/mutex` uses them for its lock files, `@zukhruf/fencing` for its fencing counters, and `@zukhruf/election` for the claim and the epoch of each election. `@zukhruf/single-flight` keeps no lock files of its own: its election claims a `FileLock` through `@zukhruf/election`.
 
 The words in these documents have one meaning each. See the glossary in [CONTEXT.md](./CONTEXT.md).
 

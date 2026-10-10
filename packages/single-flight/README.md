@@ -70,7 +70,7 @@ The lease that the work gets comes from `@zukhruf/lease`, and its token comes fr
 
 ## The directory
 
-The directory is the local folder where the processes that share flights meet. Each process that uses a `SingleFlight` keeps three files there: `flight.lock`, `flight.epoch` and `flight.sock`. All the processes that name the same directory are one group, and the callers of one key share a flight in that group only.
+The directory is the local folder where the processes that share flights meet. Each process that uses a `SingleFlight` keeps three files there: `flight.lock`, `flight.epoch` and `flight.sock`. The election of [`@zukhruf/election`](../election/README.md) claims `flight.lock` with a file lock, and records the epoch of the last term in `flight.epoch`. The journal of the claim is in memory, so a coordinator that stops leaves no `flight.lock-journal` file. All the processes that name the same directory are one group, and the callers of one key share a flight in that group only.
 
 There is no default directory. One default would put each application on the host into one group, and unrelated applications that use the same key would join each other's flights. Give each group its own directory, for example a folder of your application's data.
 
@@ -217,8 +217,7 @@ src/
   client/               the requests of one process: runs, leads, landings
   coordinator/          the coordinator of one term: flights, sessions, its server
   protocol/             the messages between a process and its coordinator
-  election/             the election in a directory (a copy of the mutex code)
-  connection/           the socket, the handshake and the supervisor (a copy)
-  shared/               SQLite and record helpers (a copy); file writes and the network directory check are in @zukhruf/fs
+  connection/           the socket, the handshake and the supervisor (a copy); the election of the directory (@zukhruf/election)
+  shared/               the record check (a copy); file writes and the network directory check are in @zukhruf/fs
   testing/              the caller process that the tests start
 ```
