@@ -6,7 +6,7 @@ The reason is the Rule of Three. Code that a second place needs is copied, and i
 
 Paths on the left are in `packages/mutex/src`. Paths on the right are in `packages/single-flight/src`.
 
-On 2026-10-10, the mutex changed several of these originals. The maintainer chose to change the mutex first, and this package later. So for these changes, the copies here do not follow yet. Backlog #2541 lists each change and the mutex commit to copy. Until then, the rows below say what differs now.
+On 2026-10-10, the mutex changed several of these originals. The maintainer chose to change the mutex first, and this package later. Backlog #2541 lists each change and the mutex commit that this package copied. The rows below say what differs now.
 
 ## Moved to `@zukhruf/fs`
 
@@ -23,26 +23,20 @@ The election is no longer a copy. `@zukhruf/election` holds it, made into one ca
 | `shared/is-record.ts`                         | `shared/is-record.ts`                 |
 | `lock-stores/socket/leave-errors-to-close.ts` | `connection/leave-errors-to-close.ts` |
 | `lock-stores/socket/json-line.ts`             | `connection/json-line.ts`             |
+| `lock-stores/remote/connection.ts`            | `connection/connection.ts`            |
+| `lock-stores/remote/connection-supervisor.ts` | `connection/connection-supervisor.ts` |
 
 ## Copied with changes
-
-**`lock-stores/remote/connection.ts` → `connection/connection.ts`.**
-The copy has a second type parameter, `Incoming`: its connection gives each message as checked. The mutex removed that parameter in 7f80fa7. A mutex connection gives each message as `unknown`, and the class that reads the protocol checks it (the mutex's ADR 0017). Backlog #2541.
-
-**`lock-stores/remote/connection-supervisor.ts` → `connection/connection-supervisor.ts`.**
-Only the type parameter `Incoming` differs, as in `connection.ts`. Backlog #2541.
 
 **`lock-stores/socket/socket-election.ts` → `connection/flight-election.ts`.**
 The claim file is `flight.lock`, not `leader.lock`. The epoch file is `flight.epoch`, not `leader.epoch`. The function is `flightElection`, not `socketElection`.
 Why: a single flight and a socket lock store can use one directory. With the same file names, they would share one election. The winner would serve only one of them, and the other one would never find a server.
 
 **`lock-stores/remote/connector.ts` → `connection/connector.ts`.**
-The lock aliases `ClientConnection` and `ClientConnector` become `FlightConnection` and `FlightConnector`. The comment on `connect` does not name keys. The copy also keeps the type parameter `Incoming`, which the mutex removed in 7f80fa7 (backlog #2541).
+The lock aliases `ClientConnection` and `ClientConnector` become `FlightConnection` and `FlightConnector`. The comment on `connect` does not name keys.
 
 **`lock-stores/socket/socket-connection.ts` → `connection/socket-connection.ts`.**
-Differs since 2026-10-10 (backlog #2541):
-
-- The copy takes an `isIncoming` check, and it closes the connection for a JSON line that fails the check. The mutex takes no check, and closes only for a line that is not JSON (7f80fa7, the mutex's ADR 0017). The maintainer chose that a JSON line that is not a message is ignored.
+Only the path of its import of `connection.ts` differs.
 
 **`lock-stores/socket/local-directory-connector.ts` → `connection/local-directory-connector.ts`.**
 Only its types and comments change.
@@ -63,11 +57,6 @@ The messages name the single flight's coordinator, not the socket store's leader
 
 - It has no `connected` callback. In the mutex, that callback only emits the `follower` role event. This package has no role event.
 - It does not wrap the connection in `AdvertisedOpsConnection`, because the welcome lists no requests.
-- The connection checks each message as a `FlightResponse`.
-
-Differs since 2026-10-10 (backlog #2541):
-
-- The mutex's socket connection takes no check (7f80fa7). The copy gives `isFlightResponse` to its socket connection.
 
 **`lock-stores/socket/socket-store.ts` (`socketPathFor`, `SOCKET_PATH_LIMIT`) → `connection/socket-path.ts`.**
 The socket file is `flight.sock`. The Windows pipe is `\\.\pipe\single-flight-<hash>`. The 103-byte limit stays.
@@ -80,13 +69,8 @@ Note: on macOS 27 with Node.js 26, a probe listened and connected on socket path
 
 Why: a coordinator process can also lead a flight. When it lands the flight and stops at once, `destroy` can drop a `landed` answer that is still on its way to a joiner. `destroySoon` sends what was written first, and then closes.
 
-Differs since 2026-10-10 (backlog #2541):
-
-- The copy gives `isRequestEnvelope` to each socket connection. The mutex gives no check: `LockCoordinator` checks each message (7f80fa7).
-
 **`lock-stores/remote/protocol.ts` (`RequestEnvelope`, `isRequestEnvelope`) → `protocol/flight-protocol.ts`.**
-They are copied as they are. The rest of that file is the lock protocol, and this package has its own.
-Differs since 2026-10-10 (backlog #2541): the mutex's `isLockRequest` checks only the fields of each request, because `LockCoordinator` already ran `isRequestEnvelope` (7f80fa7). `isFlightRequest` here checks the record and the `id` again, after the socket connection ran `isRequestEnvelope`.
+They are copied as they are. The rest of that file is the lock protocol, and this package has its own. As the mutex's `isLockRequest` does, `isFlightRequest` checks only the fields of each request, because the session already ran `isRequestEnvelope` ([ADR 0008](./adr/0008-a-connection-closes-only-when-its-framing-breaks.md)). `isFlightResponse` checks the whole answer, as the mutex's `isLockResponse` does.
 
 ## Test helpers copied
 
@@ -111,12 +95,12 @@ These helpers do not belong in `@zukhruf/coordinator`. A third package that copi
 
 ## What the extraction can share
 
-- **As is, after backlog #2541:** the connection, the connection supervisor, and the socket connection.
+- **As is:** the connection, the connection supervisor, and the socket connection.
 - **With parameters:**
   - the election: done in `@zukhruf/election`, where the names of its two files are options. The mutex and this package use it;
   - the socket path: the file name and the pipe prefix;
   - the handshake: the protocol name, the version, and what the welcome lists;
-  - the electing connector: the `connected` callback, and what wraps the connection. After backlog #2541, it checks no message: the class that reads the protocol checks it;
+  - the electing connector: the `connected` callback, and what wraps the connection. It checks no message: the class that reads the protocol checks it;
   - the server: what serves each connection;
   - the protocol error: the subject of its message.
 - **Not shared:** each coordinator's rules, and each client's requests.

@@ -7,11 +7,7 @@ import { EpochTokenSource } from '@zukhruf/fencing';
 
 import { welcome } from '../connection/handshake.ts';
 import { SocketConnection } from '../connection/socket-connection.ts';
-import {
-  type FlightResponse,
-  type RequestEnvelope,
-  isRequestEnvelope,
-} from '../protocol/flight-protocol.ts';
+import type { FlightResponse } from '../protocol/flight-protocol.ts';
 import { FlightCoordinator } from './flight-coordinator.ts';
 
 export interface FlightServerOptions {
@@ -61,12 +57,7 @@ export class FlightServer {
       // Only a process that speaks this protocol is served, so this coordinator never reads a message it would misread.
       void welcome(socket).then((speaksOurs) => {
         if (!speaksOurs) return;
-        coordinator.serve(
-          new SocketConnection<FlightResponse, RequestEnvelope>(
-            socket,
-            isRequestEnvelope,
-          ),
-        );
+        coordinator.serve(new SocketConnection<FlightResponse>(socket));
       });
     });
     server.listen(socketPath);

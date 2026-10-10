@@ -5,10 +5,11 @@ import { FencingToken } from '@zukhruf/fencing';
 import { LeaseController } from '@zukhruf/lease';
 
 import type { ConnectionSupervisor } from '../connection/connection-supervisor.ts';
-import type {
-  FlightRequest,
-  FlightResponse,
-  Outcome,
+import {
+  type FlightRequest,
+  type FlightResponse,
+  type Outcome,
+  isFlightResponse,
 } from '../protocol/flight-protocol.ts';
 
 /** This process leads a flight: it runs the work and lands the outcome. */
@@ -60,16 +61,19 @@ interface Held {
  * run that got no answer had joined nothing, and goes again as a plain run.
  */
 export class FlightClient {
-  readonly #link: ConnectionSupervisor<FlightRequest, FlightResponse>;
+  readonly #link: ConnectionSupervisor<FlightRequest>;
   readonly #pending = new Map<string, Pending>();
   readonly #held = new Map<string, Held>();
   /** Wakes `close` each time a flight this process leads is acknowledged or lost. */
   readonly #released = new Set<() => void>();
 
-  constructor(link: ConnectionSupervisor<FlightRequest, FlightResponse>) {
+  constructor(link: ConnectionSupervisor<FlightRequest>) {
     this.#link = link;
     link.on('connected', () => this.#resume());
-    link.on('message', (response) => this.#receive(response));
+    // A message this client cannot read answers nothing it waits for.
+    link.on('message', (message) => {
+      if (isFlightResponse(message)) this.#receive(message);
+    });
     link.on('disconnected', () => this.#interrupt());
     link.on('failed', (error) => this.#fail(error));
   }

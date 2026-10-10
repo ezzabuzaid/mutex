@@ -5,11 +5,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { untilAborted } from '@zukhruf/async';
 import type { LeaderElection, Term } from '@zukhruf/election';
 
-import {
-  type FlightRequest,
-  type FlightResponse,
-  isFlightResponse,
-} from '../protocol/flight-protocol.ts';
+import type { FlightRequest } from '../protocol/flight-protocol.ts';
 import type { FlightConnection, FlightConnector } from './connector.ts';
 import { type Greeting, PROTOCOL_VERSION, greet } from './handshake.ts';
 import { ProtocolVersionError } from './protocol-version-error.ts';
@@ -139,10 +135,7 @@ export class ElectingConnector implements FlightConnector {
 }
 
 function flightConnection(socket: Socket): FlightConnection {
-  return new SocketConnection<FlightRequest, FlightResponse>(
-    socket,
-    isFlightResponse,
-  );
+  return new SocketConnection<FlightRequest>(socket);
 }
 
 /** Like `reach`, but a socket reached after `signal` aborted is destroyed, not returned. */

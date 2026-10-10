@@ -1,7 +1,8 @@
 import type { EventEmitter } from 'node:events';
 
-export interface ConnectionEvents<Incoming> {
-  message: [message: Incoming];
+export interface ConnectionEvents {
+  /** Unchecked: the protocol owner that listens checks each message before it reads it. */
+  message: [message: unknown];
   /** Emitted once, when the peer is gone. */
   close: [];
 }
@@ -11,9 +12,7 @@ export interface ConnectionEvents<Incoming> {
  * Subscribe in the task that receives the connection: a message that arrives
  * while nobody listens is not kept.
  */
-export interface Connection<Outgoing, Incoming> extends EventEmitter<
-  ConnectionEvents<Incoming>
-> {
+export interface Connection<Outgoing> extends EventEmitter<ConnectionEvents> {
   /** Rejects when the message cannot be delivered because the peer is gone. */
   send(message: Outgoing): Promise<void>;
   /** Keeps the process alive while its owner waits for a message. */

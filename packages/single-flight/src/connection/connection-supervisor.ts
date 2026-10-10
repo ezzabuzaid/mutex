@@ -8,10 +8,10 @@ import type { Connector } from './connector.ts';
 export type SupervisorStatus =
   'idle' | 'connecting' | 'connected' | 'unavailable' | 'closed';
 
-export interface SupervisorEvents<Incoming> {
+export interface SupervisorEvents {
   /** A connection is open: the first one, or the replacement for a lost one. */
   connected: [];
-  message: [message: Incoming];
+  message: [message: unknown];
   /** The open connection is gone and a replacement is on its way. Nothing sent on it will be answered. */
   disconnected: [];
   /** The connector can never connect again. */
@@ -26,12 +26,12 @@ export interface SupervisorEvents<Incoming> {
  * left. It never reads the messages it carries: what a replacement must be
  * told again is for its listener to decide.
  */
-export class ConnectionSupervisor<Outgoing, Incoming> extends EventEmitter<
-  SupervisorEvents<Incoming>
-> {
-  readonly #supervision: Supervision<Outgoing, Incoming>;
+export class ConnectionSupervisor<
+  Outgoing,
+> extends EventEmitter<SupervisorEvents> {
+  readonly #supervision: Supervision<Outgoing>;
 
-  constructor(connector: Connector<Outgoing, Incoming>) {
+  constructor(connector: Connector<Outgoing>) {
     super();
     this.#supervision = new Supervision(connector, this);
   }
@@ -80,14 +80,14 @@ interface State<Outgoing> {
 }
 
 /** What the states share: the current state, and how to move to the next. */
-class Supervision<Outgoing, Incoming> {
-  readonly connector: Connector<Outgoing, Incoming>;
-  readonly events: EventEmitter<SupervisorEvents<Incoming>>;
+class Supervision<Outgoing> {
+  readonly connector: Connector<Outgoing>;
+  readonly events: EventEmitter<SupervisorEvents>;
   state: State<Outgoing>;
 
   constructor(
-    connector: Connector<Outgoing, Incoming>,
-    events: EventEmitter<SupervisorEvents<Incoming>>,
+    connector: Connector<Outgoing>,
+    events: EventEmitter<SupervisorEvents>,
   ) {
     this.connector = connector;
     this.events = events;
@@ -105,11 +105,11 @@ class Supervision<Outgoing, Incoming> {
   }
 }
 
-class Idle<Outgoing, Incoming> implements State<Outgoing> {
+class Idle<Outgoing> implements State<Outgoing> {
   readonly status = 'idle';
-  readonly #supervision: Supervision<Outgoing, Incoming>;
+  readonly #supervision: Supervision<Outgoing>;
 
-  constructor(supervision: Supervision<Outgoing, Incoming>) {
+  constructor(supervision: Supervision<Outgoing>) {
     this.#supervision = supervision;
   }
 
@@ -130,14 +130,14 @@ class Idle<Outgoing, Incoming> implements State<Outgoing> {
   }
 }
 
-class Connecting<Outgoing, Incoming> implements State<Outgoing> {
+class Connecting<Outgoing> implements State<Outgoing> {
   readonly status = 'connecting';
-  readonly #supervision: Supervision<Outgoing, Incoming>;
+  readonly #supervision: Supervision<Outgoing>;
   readonly #abort = new AbortController();
   /** Opens when the connect ends, so `close` can wait for it. */
   readonly #ended = new Latch();
 
-  constructor(supervision: Supervision<Outgoing, Incoming>) {
+  constructor(supervision: Supervision<Outgoing>) {
     this.#supervision = supervision;
   }
 
@@ -147,7 +147,7 @@ class Connecting<Outgoing, Incoming> implements State<Outgoing> {
 
   async #connect() {
     const supervision = this.#supervision;
-    let connection: Connection<Outgoing, Incoming> | undefined;
+    let connection: Connection<Outgoing> | undefined;
     try {
       connection = await Promise.try(() =>
         supervision.connector.connect(this.#abort.signal),
@@ -184,14 +184,14 @@ class Connecting<Outgoing, Incoming> implements State<Outgoing> {
   }
 }
 
-class Connected<Outgoing, Incoming> implements State<Outgoing> {
+class Connected<Outgoing> implements State<Outgoing> {
   readonly status = 'connected';
-  readonly #supervision: Supervision<Outgoing, Incoming>;
-  readonly #connection: Connection<Outgoing, Incoming>;
+  readonly #supervision: Supervision<Outgoing>;
+  readonly #connection: Connection<Outgoing>;
 
   constructor(
-    supervision: Supervision<Outgoing, Incoming>,
-    connection: Connection<Outgoing, Incoming>,
+    supervision: Supervision<Outgoing>,
+    connection: Connection<Outgoing>,
   ) {
     this.#supervision = supervision;
     this.#connection = connection;
@@ -236,11 +236,11 @@ class Connected<Outgoing, Incoming> implements State<Outgoing> {
   }
 }
 
-class Unavailable<Outgoing, Incoming> implements State<Outgoing> {
+class Unavailable<Outgoing> implements State<Outgoing> {
   readonly status = 'unavailable';
-  readonly #supervision: Supervision<Outgoing, Incoming>;
+  readonly #supervision: Supervision<Outgoing>;
 
-  constructor(supervision: Supervision<Outgoing, Incoming>) {
+  constructor(supervision: Supervision<Outgoing>) {
     this.#supervision = supervision;
   }
 

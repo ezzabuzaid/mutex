@@ -65,21 +65,32 @@ export function isRequestEnvelope(
   );
 }
 
-/** Messages arrive from another process, so their shape is checked before use. */
-export function isFlightRequest(message: unknown): message is FlightRequest {
-  if (!isRecord(message) || typeof message.id !== 'string') return false;
-  switch (message.op) {
+/**
+ * Messages arrive from another process, so their shape is checked before
+ * use. `isRequestEnvelope` already checked the `op` and the `id`, so only the
+ * fields of each request are left.
+ */
+export function isFlightRequest(
+  request: RequestEnvelope,
+): request is FlightRequest {
+  switch (request.op) {
     case 'run':
       return (
-        typeof message.key === 'string' &&
-        (message.flight === undefined || isToken(message.flight))
+        'key' in request &&
+        typeof request.key === 'string' &&
+        (!('flight' in request) || isToken(request.flight))
       );
     case 'land':
-      return isOutcome(message.outcome);
+      return 'outcome' in request && isOutcome(request.outcome);
     case 'cancel':
       return true;
     case 'reassert':
-      return typeof message.key === 'string' && isToken(message.token);
+      return (
+        'key' in request &&
+        typeof request.key === 'string' &&
+        'token' in request &&
+        isToken(request.token)
+      );
     default:
       return false;
   }

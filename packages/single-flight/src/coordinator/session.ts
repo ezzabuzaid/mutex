@@ -5,6 +5,7 @@ import {
   type FlightResponse,
   type RequestEnvelope,
   isFlightRequest,
+  isRequestEnvelope,
 } from '../protocol/flight-protocol.ts';
 import type { FlightCoordinator } from './flight-coordinator.ts';
 import { type Inbox, Party } from './party.ts';
@@ -21,11 +22,15 @@ export class Session implements Inbox {
 
   constructor(
     coordinator: FlightCoordinator,
-    connection: Connection<FlightResponse, RequestEnvelope>,
+    connection: Connection<FlightResponse>,
   ) {
     this.#coordinator = coordinator;
     this.#phase = new Serving(connection);
-    connection.on('message', (request) => this.#handle(request));
+    connection.on('message', (message) => {
+      // A message with no op or no id cannot be answered, so it is ignored, and the peer keeps its flights (ADR 0008).
+      if (!isRequestEnvelope(message)) return;
+      this.#handle(message);
+    });
     connection.once('close', () => this.#end());
   }
 
@@ -106,9 +111,9 @@ interface SessionPhase {
 
 /** The client is connected: the session answers it. */
 class Serving implements SessionPhase {
-  readonly #connection: Connection<FlightResponse, RequestEnvelope>;
+  readonly #connection: Connection<FlightResponse>;
 
-  constructor(connection: Connection<FlightResponse, RequestEnvelope>) {
+  constructor(connection: Connection<FlightResponse>) {
     this.#connection = connection;
   }
 

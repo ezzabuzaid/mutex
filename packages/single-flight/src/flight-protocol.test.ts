@@ -213,9 +213,9 @@ describe('The wire of a single flight', () => {
     'a coordinator after the term in flight.epoch takes the next epoch, records it as decimal text, and leads with tokens of it',
     { ...onUnixSockets, timeout: 10_000 },
     async () => {
-      // Arrange: the last coordinator in this directory, of a published version, recorded term 6.
+      // Arrange: the last coordinator in this directory, of a published version, recorded term 41, which reads differently in hex.
       await using directory = await scratchDirectory();
-      await writeFile(join(directory.path, 'flight.epoch'), '6');
+      await writeFile(join(directory.path, 'flight.epoch'), '41');
       await using flights = new SingleFlight({
         directory: directory.path,
         codec: asText,
@@ -232,11 +232,11 @@ describe('The wire of a single flight', () => {
       // Assert: the epoch is the high 32 bits of every token of the term.
       assert.deepEqual(
         tokens.map((token) => token >> 32n),
-        [7n],
+        [42n],
       );
       assert.equal(
         await readFile(join(directory.path, 'flight.epoch'), 'utf8'),
-        '7',
+        '42',
       );
     },
   );
@@ -388,6 +388,50 @@ describe('The wire of a single flight', () => {
       assert.equal(unsupported, '{"op":"unsupported","id":"a"}');
       assert.match(lead ?? '', /^\{"op":"lead","id":"b","token":"\d+"\}$/);
       assert.equal(peer.closed, false);
+    },
+  );
+
+  test(
+    'a peer that sends a JSON line that is not a request keeps its flight',
+    { ...onUnixSockets, timeout: 10_000 },
+    async (t) => {
+      // Arrange: a welcomed process leads the flight of `sync`, and the coordinator's own call joins it.
+      await using directory = await scratchDirectory();
+      await using coordinator = await coordinatorOf(directory.path);
+      using peer = await peerOf(directory.path);
+      peer.send('{"op":"hello","protocol":"single-flight","version":1}');
+      await linesOf(t, peer, 1);
+      peer.send('{"op":"run","id":"a","key":"sync"}');
+      await linesOf(t, peer, 2);
+      const joined = Promise.withResolvers<void>();
+      const joiner = settle(
+        coordinator.run('sync', async () => 'never', {
+          onJoin: joined.resolve,
+        }),
+      );
+      await joined.promise;
+
+      // Act: JSON lines that are not requests (no record, no id, no op, neither), then a run, then the landing.
+      peer.send('null');
+      peer.send('{"op":"run","key":"other"}');
+      peer.send('{"id":"x"}');
+      peer.send('{"note":"not a flight request"}');
+      peer.send('{"op":"run","id":"b","key":"other"}');
+      await linesOf(t, peer, 3);
+      peer.send('{"op":"land","id":"a","outcome":{"value":"from the peer"}}');
+      const joinerResult = await joiner;
+
+      // Assert: no line got an answer, the run after them did, and the joiner got the peer's outcome.
+      await linesOf(t, peer, 4);
+      const [welcome, leadA, leadB, ack] = peer.received.split('\n');
+      assert.equal(welcome, '{"op":"welcome"}');
+      assert.match(leadA ?? '', /^\{"op":"lead","id":"a","token":"\d+"\}$/);
+      assert.match(leadB ?? '', /^\{"op":"lead","id":"b","token":"\d+"\}$/);
+      assert.equal(ack, '{"op":"ack","id":"a"}');
+      assert.deepEqual(joinerResult, {
+        value: { value: 'from the peer', joined: true },
+      });
+      assert.equal(peer.closed, false, 'The connection must stay open');
     },
   );
 

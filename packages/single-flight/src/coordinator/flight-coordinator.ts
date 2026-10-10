@@ -2,11 +2,7 @@ import { Latch } from '@zukhruf/async';
 import type { FencingToken, TokenSource } from '@zukhruf/fencing';
 
 import type { Connection } from '../connection/connection.ts';
-import type {
-  FlightResponse,
-  Outcome,
-  RequestEnvelope,
-} from '../protocol/flight-protocol.ts';
+import type { FlightResponse, Outcome } from '../protocol/flight-protocol.ts';
 import { Flight } from './flight.ts';
 import type { Party } from './party.ts';
 import { Session } from './session.ts';
@@ -54,7 +50,7 @@ export class FlightCoordinator {
     }
   }
 
-  serve(connection: Connection<FlightResponse, RequestEnvelope>): void {
+  serve(connection: Connection<FlightResponse>): void {
     new Session(this, connection);
   }
 

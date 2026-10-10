@@ -26,10 +26,7 @@ describe('Socket connection', () => {
     await once(server, 'listening');
     const socket = connect(socketPath);
     await once(socket, 'connect');
-    const connection = new SocketConnection<{ n: number }, unknown>(
-      socket,
-      (message): message is unknown => true,
-    );
+    const connection = new SocketConnection<{ n: number }>(socket);
     let closed = false;
     connection.once('close', () => (closed = true));
 
