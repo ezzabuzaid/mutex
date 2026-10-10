@@ -1,5 +1,5 @@
 export { type CampaignOptions, LeaderElection } from './leader-election.ts';
-export { Term, type TermSteps } from './term.ts';
+export { type ResignOptions, Term, type TermSteps } from './term.ts';
 export {
   SqliteElection,
   type SqliteElectionOptions,

@@ -17,9 +17,12 @@ export interface CampaignOptions {
  * up, watch the won claim, and hand it to a term. Each backend is a
  * subclass that implements the steps for its claim.
  *
- * A backend keeps four rules:
+ * A backend keeps five rules:
  * - `tryClaim` returns the epoch of the term it won, in the same step, and
  *   each epoch is higher than every earlier one and below 2^31.
+ * - `tryClaim` reports `afterCleanShutdown` only when the term just before
+ *   it recorded a clean shutdown with `recordCleanShutdown`, and it reports
+ *   each record once.
  * - `watch` calls `lose` before the backend can grant the claim to another
  *   candidate, so an old leader stops before a new one starts.
  * - `release` is never called after a loss: the claim may be another
@@ -49,17 +52,31 @@ export abstract class LeaderElection<Claim> {
   /** Prepares one attempt: the resources that `tryClaim` uses again and again. */
   protected abstract open(signal: AbortSignal | undefined): Promise<Claim>;
 
-  /** Tries the claim once. Resolves with the epoch of the term it won, or `undefined` while another candidate holds it. */
+  /**
+   * Tries the claim once. Resolves with the epoch of the term it won and
+   * whether the term before it resigned clean, or `undefined` while another
+   * candidate holds it.
+   */
   protected abstract tryClaim(
     claim: Claim,
     signal: AbortSignal | undefined,
-  ): Promise<bigint | undefined>;
+  ): Promise<Pick<Term, 'epoch' | 'afterCleanShutdown'> | undefined>;
 
   /** Watches a won claim for as long as its term lasts, and calls `lose` when the backend takes it away. */
   protected abstract watch(
     claim: Claim,
     lose: (reason: Error) => void,
   ): Disposable;
+
+  /**
+   * Records that the term of `epoch` resigned clean, so that the next
+   * `tryClaim` reports it. Called while the claim is held, before `release`,
+   * and never after a loss.
+   */
+  protected abstract recordCleanShutdown(
+    claim: Claim,
+    epoch: bigint,
+  ): Promise<void>;
 
   /** Gives a won claim up. Never called after a loss. */
   protected abstract release(claim: Claim): Promise<void>;
@@ -72,11 +89,11 @@ export abstract class LeaderElection<Claim> {
     signal: AbortSignal | undefined,
   ): Promise<Term | 'lost' | undefined> {
     const claim = await this.open(signal);
-    let epoch: bigint | undefined;
+    let won: Pick<Term, 'epoch' | 'afterCleanShutdown'> | undefined;
     try {
       for (;;) {
-        epoch = await this.tryClaim(claim, signal);
-        if (epoch !== undefined) break;
+        won = await this.tryClaim(claim, signal);
+        if (won !== undefined) break;
         if (performance.now() >= deadline) break;
         await untilAborted(
           delay(this.#pollInterval, undefined, { signal }),
@@ -87,24 +104,25 @@ export abstract class LeaderElection<Claim> {
       await this.close(claim).catch(() => {});
       throw error;
     }
-    if (epoch === undefined) {
+    if (won === undefined) {
       await this.close(claim);
       return undefined;
     }
-    return this.#begin(claim, epoch, signal);
+    return this.#begin(claim, won, signal);
   }
 
   /** Hands a won claim to its term, or gives it up when the caller left meanwhile. */
   async #begin(
     claim: Claim,
-    epoch: bigint,
+    won: Pick<Term, 'epoch' | 'afterCleanShutdown'>,
     signal: AbortSignal | undefined,
   ): Promise<Term | 'lost'> {
     let term: Term;
     try {
       signal?.throwIfAborted();
-      term = new Term(epoch, {
+      term = new Term(won, {
         watch: (lose) => this.watch(claim, lose),
+        recordCleanShutdown: () => this.recordCleanShutdown(claim, won.epoch),
         release: () => this.release(claim),
         close: () => this.close(claim),
       });

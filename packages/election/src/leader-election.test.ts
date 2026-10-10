@@ -18,6 +18,7 @@ interface Script {
   losers?: Array<(reason: Error) => void>;
   /** Thrown by each watch: the backend could not start to watch its claim. */
   watchFails?: Error;
+  recordFails?: Error;
   /** Runs inside `release`, before it answers. */
   duringRelease?: () => Promise<void>;
   /** Runs inside `close`, before it answers. */
@@ -47,14 +48,17 @@ class ScriptedElection extends LeaderElection<number> {
     return this.#attempts;
   }
 
-  protected async tryClaim(claim: number): Promise<bigint | undefined> {
+  protected async tryClaim(
+    claim: number,
+  ): Promise<{ epoch: bigint; afterCleanShutdown: boolean } | undefined> {
     this.steps.push(`try ${claim}`);
     const answers = this.#script.tries ?? [1n];
     const answer = answers[Math.min(this.#tries, answers.length - 1)];
     this.#tries += 1;
     this.#script.duringTry?.();
     if (answer instanceof Error) throw answer;
-    return answer === 'busy' ? undefined : answer;
+    if (answer === 'busy' || answer === undefined) return undefined;
+    return { epoch: answer, afterCleanShutdown: false };
   }
 
   protected watch(claim: number, lose: (reason: Error) => void): Disposable {
@@ -71,6 +75,14 @@ class ScriptedElection extends LeaderElection<number> {
         this.steps.push(`unwatch ${claim}`);
       },
     };
+  }
+
+  protected async recordCleanShutdown(
+    claim: number,
+    epoch: bigint,
+  ): Promise<void> {
+    this.steps.push(`record ${claim} at ${epoch}`);
+    if (this.#script.recordFails) throw this.#script.recordFails;
   }
 
   protected async release(claim: number): Promise<void> {
@@ -310,6 +322,78 @@ describe('A term that its leader resigns', () => {
       assert.deepEqual(first, { error: failure });
       assert.deepEqual(second, { error: failure });
       assert.deepEqual(election.steps.slice(-2), ['release 1', 'close 1']);
+    },
+  );
+});
+
+describe('A term that its leader resigns clean', () => {
+  test(
+    'a clean resign records the shutdown with the term’s epoch after it stops watching and before it gives the claim up',
+    { timeout: 10_000 },
+    async () => {
+      // Arrange
+      const election = new ScriptedElection({ tries: [7n] });
+      const term = await election.campaign();
+      assert.ok(term);
+
+      // Act
+      await term.resign({ clean: true });
+
+      // Assert
+      assert.deepEqual(election.steps, [
+        'open 1',
+        'try 1',
+        'watch 1',
+        'unwatch 1',
+        'record 1 at 7',
+        'release 1',
+        'close 1',
+      ]);
+    },
+  );
+
+  test(
+    'a resign with clean set to false records nothing, as a resign without options',
+    { timeout: 10_000 },
+    async () => {
+      // Arrange
+      const election = new ScriptedElection({});
+      const term = await election.campaign();
+      assert.ok(term);
+
+      // Act
+      await term.resign({ clean: false });
+
+      // Assert
+      assert.deepEqual(election.steps, [
+        'open 1',
+        'try 1',
+        'watch 1',
+        'unwatch 1',
+        'release 1',
+        'close 1',
+      ]);
+    },
+  );
+
+  test(
+    'a clean resign whose record fails still frees the claim, and each caller rejects with that failure',
+    { timeout: 10_000 },
+    async () => {
+      // Arrange
+      const failure = new Error('The backend could not record the shutdown');
+      const election = new ScriptedElection({ recordFails: failure });
+      const term = await election.campaign();
+      assert.ok(term);
+
+      // Act
+      const first = await settle(term.resign({ clean: true }));
+      const second = await settle(term.resign());
+
+      // Assert
+      assert.deepEqual(first, { error: failure });
+      assert.deepEqual(second, { error: failure });
+      assert.deepEqual(election.steps.slice(-2), ['record 1 at 1', 'close 1']);
     },
   );
 });

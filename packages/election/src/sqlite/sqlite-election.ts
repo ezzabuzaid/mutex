@@ -1,14 +1,16 @@
-import { mkdir, readFile } from 'node:fs/promises';
+import { mkdir, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import {
   FileLock,
   assertLocalDirectory,
+  atomicWrite,
   durableWrite,
   isErrno,
 } from '@zukhruf/fs';
 
 import { LeaderElection } from '../leader-election.ts';
+import type { Term } from '../term.ts';
 
 export interface SqliteElectionOptions {
   /** The local folder where the candidates meet. */
@@ -16,7 +18,8 @@ export interface SqliteElectionOptions {
   /**
    * The file in `directory` whose file lock is the claim.
    * Never delete it while candidates run: a new file would let a second
-   * leader win.
+   * leader win. A term that resigns clean writes `<claimFile>.clean` beside
+   * it, and the next term reads and removes it.
    */
   claimFile: string;
   /** The file in `directory` that records the epoch of the last term, as decimal text. */
@@ -35,6 +38,7 @@ export class SqliteElection extends LeaderElection<FileLock> {
   readonly #directory: string;
   readonly #claimPath: string;
   readonly #epochPath: string;
+  readonly #cleanShutdownPath: string;
 
   constructor({
     directory,
@@ -46,6 +50,7 @@ export class SqliteElection extends LeaderElection<FileLock> {
     this.#directory = directory;
     this.#claimPath = join(directory, claimFile);
     this.#epochPath = join(directory, epochFile);
+    this.#cleanShutdownPath = `${this.#claimPath}.clean`;
   }
 
   protected async open(): Promise<FileLock> {
@@ -54,17 +59,39 @@ export class SqliteElection extends LeaderElection<FileLock> {
     return FileLock.open(this.#claimPath);
   }
 
-  protected async tryClaim(claim: FileLock): Promise<bigint | undefined> {
+  protected async tryClaim(
+    claim: FileLock,
+  ): Promise<Pick<Term, 'epoch' | 'afterCleanShutdown'> | undefined> {
     if (!claim.tryLock()) return undefined;
     // Safe without further locking: only the holder of the claim gets here.
-    const epoch = (await readEpoch(this.#epochPath)) + 1n;
+    const previous = await readEpoch(this.#epochPath);
+    // Only a note that names the epoch just before this one tells of a clean
+    // shutdown: an older note is from a term that ended long ago.
+    const afterCleanShutdown =
+      (await readCleanShutdown(this.#cleanShutdownPath)) ===
+      previous.toString();
+    const epoch = previous + 1n;
     await durableWrite(this.#epochPath, epoch.toString());
-    return epoch;
+    // Read once: if the epochs ever start again, an old note could name one of them.
+    await rm(this.#cleanShutdownPath, { force: true });
+    return { epoch, afterCleanShutdown };
   }
 
   /** The kernel holds the claim for as long as the process lives, so there is nothing to watch. */
   protected watch(): Disposable {
     return { [Symbol.dispose]() {} };
+  }
+
+  /**
+   * A lost note costs the next term only its recovery, so the note needs no
+   * sync to the disk: an atomic replace is enough, and a reader never sees a
+   * part of it.
+   */
+  protected async recordCleanShutdown(
+    _claim: FileLock,
+    epoch: bigint,
+  ): Promise<void> {
+    await atomicWrite(this.#cleanShutdownPath, epoch.toString());
   }
 
   protected async release(claim: FileLock): Promise<void> {
@@ -73,6 +100,16 @@ export class SqliteElection extends LeaderElection<FileLock> {
 
   protected async close(claim: FileLock): Promise<void> {
     claim[Symbol.dispose]();
+  }
+}
+
+/** The epoch that the note names, as its text, or `undefined` when there is no note. */
+async function readCleanShutdown(path: string): Promise<string | undefined> {
+  try {
+    return await readFile(path, 'utf8');
+  } catch (error) {
+    if (isErrno(error, 'ENOENT')) return undefined;
+    throw error;
   }
 }
 

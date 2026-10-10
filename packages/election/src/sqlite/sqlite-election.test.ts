@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { addAbortListener } from 'node:events';
 // The default export is the module object itself, which mock.method can patch;
 // syncBuiltinESMExports then copies the patch to the named exports.
 import fsPromises from 'node:fs/promises';
@@ -6,7 +7,10 @@ import { syncBuiltinESMExports } from 'node:module';
 import { join, sep } from 'node:path';
 import { describe, mock, test } from 'node:test';
 
-import { NetworkDirectoryError as FsNetworkDirectoryError } from '@zukhruf/fs';
+import {
+  type FileLock,
+  NetworkDirectoryError as FsNetworkDirectoryError,
+} from '@zukhruf/fs';
 
 import { NetworkDirectoryError, SqliteElection } from '../index.ts';
 import { scratchDirectory } from '../testing/scratch-directory.ts';
@@ -34,6 +38,30 @@ const candidateSource = (directory: string, timeout: number) => `
 	}).campaign({ timeout: ${timeout} });
 	process.send(term ? { type: 'leader', epoch: term.epoch.toString() } : { type: 'follower' });
 `;
+
+/**
+ * The election of these tests, with a backend that takes the claim away when
+ * `loss` aborts. SQLite never takes a claim from a living leader, so only such
+ * a backend can show what a lost term leaves behind.
+ */
+class LosableElection extends SqliteElection {
+  readonly #loss: AbortSignal;
+
+  constructor(directory: string, loss: AbortSignal) {
+    super({ directory, claimFile: 'term.lock', epochFile: 'term.epoch' });
+    this.#loss = loss;
+  }
+
+  // The parameters are optional because SqliteElection's watch declares none.
+  protected override watch(
+    _claim?: FileLock,
+    lose?: (reason: Error) => void,
+  ): Disposable {
+    return addAbortListener(this.#loss, () =>
+      lose?.(new Error('The backend took the claim away')),
+    );
+  }
+}
 
 const onLinux = {
   skip:
@@ -210,6 +238,34 @@ describe('The files of a SQLite election', () => {
   );
 
   test(
+    'a clean resign writes its epoch beside the claim file, and leaves the epoch file as decimal text, so each published version still reads it',
+    { timeout: 10_000 },
+    async () => {
+      // Arrange
+      await using directory = await scratchDirectory();
+      const election = electionIn(directory.path);
+      const epochFile = join(directory.path, 'term.epoch');
+      const first = await election.campaign();
+      assert.ok(first, 'The first campaign in an empty directory must win');
+
+      // Act
+      await first.resign({ clean: true });
+      const afterResign = await fsPromises.readFile(epochFile, 'utf8');
+      const note = await fsPromises.readFile(
+        join(directory.path, 'term.lock.clean'),
+        'utf8',
+      );
+      await using next = await election.campaign();
+
+      // Assert
+      assert.equal(afterResign, '1');
+      assert.equal(note, '1', 'The note must hold the epoch of the clean term');
+      assert.ok(next, 'The next campaign must win after the leader resigns');
+      assert.equal(await fsPromises.readFile(epochFile, 'utf8'), '2');
+    },
+  );
+
+  test(
     'a won term is on disk before the campaign resolves, so a power loss cannot repeat its epoch',
     {
       skip:
@@ -242,6 +298,198 @@ describe('The files of a SQLite election', () => {
           ),
         'The directory that holds the new epoch must reach the disk before the term starts',
       );
+    },
+  );
+});
+
+describe('A clean shutdown in a SQLite election', () => {
+  test(
+    'a term that resigns without saying it is clean leaves its successor nothing: the next term is not after a clean shutdown',
+    { timeout: 10_000 },
+    async () => {
+      // Arrange
+      await using directory = await scratchDirectory();
+      const election = electionIn(directory.path);
+      const first = await election.campaign();
+      assert.ok(first, 'The first campaign in an empty directory must win');
+
+      // Act
+      await first.resign();
+      await using next = await election.campaign();
+
+      // Assert
+      assert.ok(next, 'The next campaign must win after the leader resigns');
+      assert.equal(next.afterCleanShutdown, false);
+    },
+  );
+
+  test(
+    'a term that resigns clean tells its successor: the next term is after a clean shutdown',
+    { timeout: 10_000 },
+    async () => {
+      // Arrange
+      await using directory = await scratchDirectory();
+      const election = electionIn(directory.path);
+      const first = await election.campaign();
+      assert.ok(first, 'The first campaign in an empty directory must win');
+
+      // Act
+      await first.resign({ clean: true });
+      await using next = await election.campaign();
+
+      // Assert
+      assert.ok(next, 'The next campaign must win after the leader resigns');
+      assert.equal(next.afterCleanShutdown, true);
+    },
+  );
+
+  test(
+    'a lost term records nothing, also when its leader resigns it clean: the next term is not after a clean shutdown',
+    { timeout: 10_000 },
+    async () => {
+      // Arrange: the backend takes the claim away from a living leader.
+      await using directory = await scratchDirectory();
+      const loss = new AbortController();
+      const lost = await new LosableElection(
+        directory.path,
+        loss.signal,
+      ).campaign();
+      assert.ok(lost, 'The first campaign in an empty directory must win');
+      loss.abort();
+
+      // Act
+      await lost.resign({ clean: true });
+      await using next = await electionIn(directory.path).campaign();
+
+      // Assert
+      assert.ok(next, 'The next campaign must win after the loss');
+      assert.equal(next.afterCleanShutdown, false);
+    },
+  );
+
+  test(
+    'a term that dies after a clean one is not clean itself: the term after it is not after a clean shutdown',
+    { timeout: 15_000 },
+    async (t) => {
+      // Arrange: a clean term, then a term in another process.
+      await using directory = await scratchDirectory();
+      const election = electionIn(directory.path);
+      const clean = await election.campaign();
+      assert.ok(clean, 'The first campaign in an empty directory must win');
+      await clean.resign({ clean: true });
+      await using leader = startWorker(
+        candidateSource(directory.path, 1000),
+        'leader',
+      );
+      await waitUntil(
+        t,
+        () => leader.has('leader'),
+        () => `The second candidate must lead.\n${leader.stderr}`,
+        newProcessTimeout,
+      );
+
+      // Act: the second leader dies without resigning.
+      leader.child.kill('SIGKILL');
+      await leader.closed;
+      await using next = await election.campaign({ timeout: 2000 });
+
+      // Assert
+      assert.ok(next, 'A candidate must take over once the leader is gone');
+      assert.equal(next.epoch, 3n);
+      assert.equal(next.afterCleanShutdown, false);
+    },
+  );
+
+  test(
+    'a note that names an older term is not about the term just before: the next term is not after a clean shutdown',
+    { timeout: 10_000 },
+    async () => {
+      // Arrange: two terms that resign without a note. Then a note for the
+      // first term, written by hand: a published version never removes a
+      // note, so a note can stay behind from a term before its terms. No
+      // operation of this version leaves one.
+      await using directory = await scratchDirectory();
+      const election = electionIn(directory.path);
+      for (let terms = 0; terms < 2; terms++) {
+        const term = await election.campaign();
+        assert.ok(term, 'Each campaign on a free claim must win');
+        await term.resign();
+      }
+      await fsPromises.writeFile(join(directory.path, 'term.lock.clean'), '1');
+
+      // Act
+      await using next = await election.campaign();
+
+      // Assert
+      assert.ok(next, 'The next campaign must win');
+      assert.equal(next.epoch, 3n);
+      assert.equal(next.afterCleanShutdown, false);
+    },
+  );
+
+  test(
+    'a note is read only once: when the epochs start again, an old note does not match a new term',
+    { timeout: 10_000 },
+    async () => {
+      // Arrange: a clean term, and a term after it that reads the note.
+      await using directory = await scratchDirectory();
+      const election = electionIn(directory.path);
+      const clean = await election.campaign();
+      assert.ok(clean, 'The first campaign in an empty directory must win');
+      await clean.resign({ clean: true });
+      const reader = await election.campaign();
+      assert.ok(reader, 'The second campaign must win');
+      assert.equal(reader.afterCleanShutdown, true);
+      await reader.resign();
+      // Someone deletes the epoch file by hand, so the epochs start again at
+      // 1. No operation of the election does this.
+      await fsPromises.rm(join(directory.path, 'term.epoch'));
+      const restarted = await election.campaign();
+      assert.ok(restarted, 'The campaign after the reset must win');
+      assert.equal(restarted.epoch, 1n);
+
+      // Act: the new term 1 resigns without a note.
+      await restarted.resign();
+      await using next = await election.campaign();
+
+      // Assert
+      assert.ok(next, 'The next campaign must win');
+      assert.equal(next.afterCleanShutdown, false);
+    },
+  );
+
+  test(
+    'the first term of a directory has no term before it, so it is not after a clean shutdown',
+    { timeout: 10_000 },
+    async () => {
+      // Arrange
+      await using directory = await scratchDirectory();
+
+      // Act
+      await using first = await electionIn(directory.path).campaign();
+
+      // Assert
+      assert.ok(first, 'The first campaign in an empty directory must win');
+      assert.equal(first.afterCleanShutdown, false);
+    },
+  );
+
+  test(
+    'an empty note, as a power loss can leave, is not a clean shutdown, also in a directory with no term yet',
+    { timeout: 10_000 },
+    async () => {
+      // Arrange: an empty note and no epoch file. The note is not synced to
+      // the disk, and after a power loss some file systems keep its name but
+      // not its text. This is platform setup that no operation exposes.
+      await using directory = await scratchDirectory();
+      await fsPromises.writeFile(join(directory.path, 'term.lock.clean'), '');
+
+      // Act
+      await using first = await electionIn(directory.path).campaign();
+
+      // Assert
+      assert.ok(first, 'The first campaign must win');
+      assert.equal(first.afterCleanShutdown, false);
     },
   );
 });
