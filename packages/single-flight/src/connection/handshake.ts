@@ -1,6 +1,7 @@
 import type { Socket } from 'node:net';
 
 import { isRecord } from '../shared/is-record.ts';
+import { leaveErrorsToClose } from './leave-errors-to-close.ts';
 
 /** The protocol a single flight's processes speak, named in every hello, so no process of another protocol is ever served. */
 const PROTOCOL = 'single-flight';
@@ -114,8 +115,7 @@ function readLine(socket: Socket): Promise<string | undefined> {
     socket.off('data', onData);
     resolve(undefined);
   };
-  // Every error is followed by `close`, which reports the lost connection as no answer.
-  socket.on('error', () => {});
+  leaveErrorsToClose(socket);
   socket.on('data', onData);
   socket.once('close', onClose);
   return promise;

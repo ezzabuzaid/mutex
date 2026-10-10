@@ -18,9 +18,10 @@ The election is no longer a copy. `@zukhruf/election` holds it, made into one ca
 
 ## Copied without a change
 
-| Mutex                 | Single flight         |
-| --------------------- | --------------------- |
-| `shared/is-record.ts` | `shared/is-record.ts` |
+| Mutex                                         | Single flight                         |
+| --------------------------------------------- | ------------------------------------- |
+| `shared/is-record.ts`                         | `shared/is-record.ts`                 |
+| `lock-stores/socket/leave-errors-to-close.ts` | `connection/leave-errors-to-close.ts` |
 
 ## Copied with changes
 

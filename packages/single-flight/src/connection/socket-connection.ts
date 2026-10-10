@@ -3,6 +3,7 @@ import type { Socket } from 'node:net';
 import { createInterface } from 'node:readline';
 
 import type { Connection, ConnectionEvents } from './connection.ts';
+import { leaveErrorsToClose } from './leave-errors-to-close.ts';
 
 /**
  * Newline-delimited JSON over a stream socket. A stream has no message
@@ -22,20 +23,19 @@ export class SocketConnection<Outgoing, Incoming>
   ) {
     super();
     this.#socket = socket;
-    // Every error is followed by `close`, which is where the peer's loss is handled.
-    socket.on('error', () => {});
-    createInterface({ input: socket, crlfDelay: Infinity })
-      .on('line', (line) => {
-        try {
-          const parsed: unknown = JSON.parse(line);
-          if (isIncoming(parsed)) this.emit('message', parsed);
-          else this.close();
-        } catch {
-          this.close();
-        }
-      })
-      // readline re-emits socket errors (e.g. EPIPE when the peer died); `close` reports the loss.
-      .on('error', () => {});
+    leaveErrorsToClose(socket);
+    const lines = createInterface({ input: socket, crlfDelay: Infinity });
+    lines.on('line', (line) => {
+      try {
+        const parsed: unknown = JSON.parse(line);
+        if (isIncoming(parsed)) this.emit('message', parsed);
+        else this.close();
+      } catch {
+        this.close();
+      }
+    });
+    // readline re-emits the socket's errors (e.g. EPIPE when the peer died).
+    leaveErrorsToClose(lines);
     socket.once('close', () => this.emit('close'));
   }
 
