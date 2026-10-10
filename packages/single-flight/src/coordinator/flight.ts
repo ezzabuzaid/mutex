@@ -16,9 +16,14 @@ export class Flight {
     this.leader = leader;
   }
 
-  /** Whether this is the flight with the token `flight`, which a rejoin names. */
+  /** The flight's name on the wire: its token as decimal text, which a joined answer and a rejoin carry. */
+  get id(): string {
+    return this.token.toString();
+  }
+
+  /** Whether this is the flight with the id `flight`, which a rejoin names. */
   is(flight: string): boolean {
-    return flight === this.token.toString();
+    return flight === this.id;
   }
 
   add(joiner: Party) {

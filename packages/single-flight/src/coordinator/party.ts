@@ -49,7 +49,7 @@ export class Party {
 
   join(flight: Flight) {
     this.#role = { kind: 'joining', flight };
-    this.#reply({ op: 'joined', flight: flight.token.toString() });
+    this.#reply({ op: 'joined', flight: flight.id });
   }
 
   /** Answers for good with `answer`, or ends without an answer when it was withdrawn or its connection is gone. */

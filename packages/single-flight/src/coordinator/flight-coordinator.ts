@@ -129,7 +129,9 @@ class Coordinating implements Phase {
 }
 
 /** How a reasserted flight ended during the window, for rejoins that arrive after its end. */
-type Ending = { token: string } & ({ landed: Outcome } | { interrupted: true });
+type Ending = { flight: Flight } & (
+  { landed: Outcome } | { interrupted: true }
+);
 
 /** Starts no flight, so leaders from a previous coordinator can reassert theirs first. */
 class GraceWindow implements Phase {
@@ -164,7 +166,7 @@ class GraceWindow implements Phase {
       const inProgress = this.#flights.get(key);
       if (inProgress?.is(flight)) return inProgress.add(party);
       const ending = this.#endings.get(key);
-      if (ending?.token === flight) {
+      if (ending?.flight.is(flight)) {
         return party.end(
           'landed' in ending
             ? { op: 'landed', outcome: ending.landed }
@@ -195,18 +197,12 @@ class GraceWindow implements Phase {
   }
 
   land(flight: Flight, outcome: Outcome) {
-    this.#endings.set(flight.key, {
-      token: flight.token.toString(),
-      landed: outcome,
-    });
+    this.#endings.set(flight.key, { flight, landed: outcome });
     this.#next.land(flight, outcome);
   }
 
   interrupt(flight: Flight) {
-    this.#endings.set(flight.key, {
-      token: flight.token.toString(),
-      interrupted: true,
-    });
+    this.#endings.set(flight.key, { flight, interrupted: true });
     this.#next.interrupt(flight);
   }
 
