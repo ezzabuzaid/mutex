@@ -25,6 +25,9 @@ export class SocketConnection<Outgoing>
     super();
     this.#socket = socket;
     this.#write = promisify<string, void>(socket.write).bind(socket);
+    // readline removes its own 'error' listener from the socket when the
+    // interface closes on the peer's FIN, so an error after that (e.g. a reset
+    // after the half-close) needs this listener of the socket's own.
     leaveErrorsToClose(socket);
     const lines = createInterface({ input: socket, crlfDelay: Infinity });
     lines.on('line', (line) => {
