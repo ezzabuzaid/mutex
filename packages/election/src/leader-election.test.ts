@@ -393,7 +393,14 @@ describe('A term that its leader resigns clean', () => {
       // Assert
       assert.deepEqual(first, { error: failure });
       assert.deepEqual(second, { error: failure });
-      assert.deepEqual(election.steps.slice(-2), ['record 1 at 1', 'close 1']);
+      assert.deepEqual(election.steps, [
+        'open 1',
+        'try 1',
+        'watch 1',
+        'unwatch 1',
+        'record 1 at 1',
+        'close 1',
+      ]);
     },
   );
 });
