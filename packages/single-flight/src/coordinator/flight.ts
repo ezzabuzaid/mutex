@@ -33,16 +33,16 @@ export class Flight {
   /** Pushes the outcome to every joiner, then tells the leader that it was handed over. */
   land(outcome: Outcome) {
     for (const joiner of this.#joiners) {
-      joiner.end({ op: 'landed', id: joiner.id, outcome });
+      joiner.end({ op: 'landed', outcome });
     }
     this.#joiners.clear();
-    this.leader.end({ op: 'ack', id: this.leader.id });
+    this.leader.end({ op: 'ack' });
   }
 
   /** Ends without an outcome: every joiner learns that its flight is lost, and none runs the work again. */
   interrupt() {
     for (const joiner of this.#joiners) {
-      joiner.end({ op: 'interrupted', id: joiner.id });
+      joiner.end({ op: 'interrupted' });
     }
     this.#joiners.clear();
   }

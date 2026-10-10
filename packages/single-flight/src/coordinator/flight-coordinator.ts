@@ -104,11 +104,11 @@ class Coordinating implements Phase {
     if (party.role.kind !== 'waiting') return;
     const inProgress = this.#flights.get(key);
     if (inProgress?.is(flight)) return inProgress.add(party);
-    party.end({ op: 'interrupted', id: party.id });
+    party.end({ op: 'interrupted' });
   }
 
   reassert(party: Party) {
-    party.end({ op: 'rejected', id: party.id });
+    party.end({ op: 'rejected' });
   }
 
   land(flight: Flight, outcome: Outcome) {
@@ -167,8 +167,8 @@ class GraceWindow implements Phase {
       if (ending?.token === flight) {
         return party.end(
           'landed' in ending
-            ? { op: 'landed', id: party.id, outcome: ending.landed }
-            : { op: 'interrupted', id: party.id },
+            ? { op: 'landed', outcome: ending.landed }
+            : { op: 'interrupted' },
         );
       }
       const woken = await Promise.race([over, this.#reassertionOf(key)]);
@@ -180,10 +180,10 @@ class GraceWindow implements Phase {
   reassert(party: Party, key: string, token: FencingToken) {
     const claimed = this.#flights.get(key);
     if (claimed && !token.isNewerThan(claimed.token)) {
-      return party.end({ op: 'rejected', id: party.id });
+      return party.end({ op: 'rejected' });
     }
     if (claimed) {
-      claimed.leader.end({ op: 'rejected', id: claimed.leader.id });
+      claimed.leader.end({ op: 'rejected' });
       this.interrupt(claimed);
     }
     const flight = new Flight(key, token, party);
